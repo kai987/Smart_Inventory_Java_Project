@@ -1,0 +1,13 @@
+# Generated submission artifacts
+outputs/
+
+# IDE and build output
+.idea/
+out/
+*.class
+*.iml
+
+# macOS and Microsoft Office temporary files
+.DS_Store
+~$*.pptx
+~$*.xlsx
