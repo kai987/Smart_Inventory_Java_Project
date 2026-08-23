@@ -1,11 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { useDeferredValue, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import { adminApi } from '../api/adminApi'
-import { applyFieldErrors, toApiError } from '../api/apiError'
+import { toApiError } from '../api/apiError'
 import { productApi } from '../api/productApi'
 import type { CreateProductRequest, Product } from '../api/types'
 import { queryKeys } from '../app/queryClient'
@@ -15,33 +17,68 @@ import { Button } from '../components/ui/Button'
 import { Dialog } from '../components/ui/Dialog'
 import { Field } from '../components/ui/Field'
 import { ProductImage } from '../features/products/ProductImage'
-import { formatYen } from '../utils/currency'
+import { translateApiError, translateApiFieldError } from '../i18n/apiErrorLocalization'
+import { useLocaleFormatters } from '../i18n/formatters'
+import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
 import styles from '../features/admin/admin.module.css'
 import pageStyles from './pages.module.css'
 
 const csvReserved = /[,|:\r\n]/
 const maxLong = 9_223_372_036_854_775_807n
 
-const productSchema = z.object({
-  id: z.string().regex(/^P\d{3}$/, 'Use the format P followed by three digits.'),
-  name: z.string().trim().min(1, 'Enter a product name.').max(100, 'Name must be at most 100 characters.').refine((value) => !csvReserved.test(value), 'Name contains a reserved character.'),
-  priceYen: z.string().regex(/^[1-9]\d*$/, 'Enter a positive whole-yen amount.').refine((value) => {
-    try { return BigInt(value) <= maxLong } catch { return false }
-  }, 'Price exceeds the supported range.'),
-  stock: z.string().regex(/^\d+$/, 'Enter zero or a positive whole number.').refine((value) => Number(value) <= 2_147_483_647, 'Stock exceeds the supported range.'),
-  weightKg: z.string().refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, 'Enter a positive finite weight.'),
-})
+export function createProductSchema(t: TFunction) {
+  return z.object({
+    id: z.string().regex(/^P\d{3}$/, t('validation.productIdPattern')),
+    name: z.string().trim()
+      .min(1, t('validation.productNameRequired'))
+      .max(100, t('validation.productNameMax'))
+      .refine((value) => !csvReserved.test(value), t('validation.productNameReservedCharacters')),
+    priceYen: z.string().regex(/^[1-9]\d*$/, t('validation.pricePositive')).refine((value) => {
+      try { return BigInt(value) <= maxLong } catch { return false }
+    }, t('validation.priceRange')),
+    stock: z.string().regex(/^\d+$/, t('validation.stockNonNegative'))
+      .refine((value) => Number(value) <= 2_147_483_647, t('validation.stockRange')),
+    weightKg: z.string().refine(
+      (value) => Number.isFinite(Number(value)) && Number(value) > 0,
+      t('validation.weightPositive'),
+    ),
+  })
+}
 
-type ProductFormValues = z.infer<typeof productSchema>
+export function createStockSchema(t: TFunction) {
+  return z.object({
+    stock: z.string().regex(/^\d+$/, t('validation.stockNonNegative'))
+      .refine((value) => Number(value) <= 2_147_483_647, t('validation.stockRange')),
+  })
+}
+
+type ProductFormValues = z.infer<ReturnType<typeof createProductSchema>>
+type StockValues = z.infer<ReturnType<typeof createStockSchema>>
 const productFields = ['id', 'name', 'priceYen', 'stock', 'weightKg'] as const
+type ProductField = typeof productFields[number]
+
+function isProductField(value: string): value is ProductField {
+  return (productFields as readonly string[]).includes(value)
+}
 
 function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const { t, i18n } = useTranslation()
+  const resolvedLanguage = i18n.resolvedLanguage
+  const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
+  const schema = useMemo(() => {
+    void resolvedLanguage
+    return createProductSchema(t)
+  }, [resolvedLanguage, t])
   const form = useForm<ProductFormValues>({
-    resolver: zodResolver(productSchema),
+    resolver: zodResolver(schema),
     defaultValues: { id: '', name: '', priceYen: '', stock: '0', weightKg: '' },
   })
+  const { clearErrors } = form
   const mutation = useMutation({ mutationFn: productApi.create })
+
+  useEffect(() => {
+    clearErrors()
+  }, [clearErrors, resolvedLanguage])
 
   const close = () => {
     if (mutation.isPending) return
@@ -66,25 +103,30 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
       onClose()
     } catch (error: unknown) {
       const apiError = toApiError(error)
-      applyFieldErrors(apiError, form.setError, productFields)
-      setSubmitError(apiError.code === 'PRODUCT_EXISTS' ? 'A product with this ID already exists.' : apiError.message)
+      for (const fieldError of apiError.fieldErrors) {
+        const field = fieldError.field.replace(/^request\./, '')
+        if (isProductField(field)) {
+          form.setError(field, { type: 'server', message: translateApiFieldError(fieldError, t) })
+        }
+      }
+      setSubmitError(apiError)
     }
   })
 
   return (
-    <Dialog open={open} title="Add product" description="Create a product using the same rules as the saved inventory." onClose={close}>
+    <Dialog open={open} title={t('admin.addProduct')} description={t('admin.addProductDescription')} onClose={close}>
       <form onSubmit={submit} noValidate>
         <div className={pageStyles.formGrid}>
-          {submitError === null ? null : <p className={`${pageStyles.formMessage} ${pageStyles.formMessageWide}`} role="alert">{submitError}</p>}
-          <Field label="Product ID" placeholder="P005" error={form.formState.errors.id?.message} {...form.register('id')} />
-          <Field label="Name" placeholder="Webcam" error={form.formState.errors.name?.message} {...form.register('name')} />
-          <Field label="Price (JPY)" inputMode="numeric" placeholder="9800" error={form.formState.errors.priceYen?.message} {...form.register('priceYen')} />
-          <Field id="product-stock" label="Stock" inputMode="numeric" placeholder="12" error={form.formState.errors.stock?.message} {...form.register('stock')} />
-          <Field label="Weight (kg)" inputMode="decimal" placeholder="0.35" error={form.formState.errors.weightKg?.message} {...form.register('weightKg')} />
+          {submitError === null ? null : <p className={`${pageStyles.formMessage} ${pageStyles.formMessageWide}`} role="alert">{translateApiError(submitError, t)}</p>}
+          <Field label={t('admin.productId')} placeholder="P005" error={form.formState.errors.id?.message} {...form.register('id')} />
+          <Field label={t('admin.productName')} placeholder={t('admin.productNamePlaceholder')} error={form.formState.errors.name?.message} {...form.register('name')} />
+          <Field label={t('admin.priceJpy')} inputMode="numeric" placeholder="9800" error={form.formState.errors.priceYen?.message} {...form.register('priceYen')} />
+          <Field id="product-stock" label={t('admin.stock')} inputMode="numeric" placeholder="12" error={form.formState.errors.stock?.message} {...form.register('stock')} />
+          <Field label={t('admin.weightKg')} inputMode="decimal" placeholder="0.35" error={form.formState.errors.weightKg?.message} {...form.register('weightKg')} />
         </div>
         <div className={pageStyles.dialogActions}>
-          <Button type="button" variant="secondary" onClick={close} disabled={mutation.isPending}>Cancel</Button>
-          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Adding…' : 'Add product'}</Button>
+          <Button type="button" variant="secondary" onClick={close} disabled={mutation.isPending}>{t('common.cancel')}</Button>
+          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t('admin.addingProduct') : t('admin.addProduct')}</Button>
         </div>
       </form>
     </Dialog>
@@ -92,11 +134,20 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
 }
 
 function StockDialog({ product, onClose, onUpdated }: { product: Product | null; onClose: () => void; onUpdated: () => void }) {
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const schema = z.object({ stock: z.string().regex(/^\d+$/, 'Enter zero or a positive whole number.').refine((value) => Number(value) <= 2_147_483_647, 'Stock exceeds the supported range.') })
-  type StockValues = z.infer<typeof schema>
+  const { t, i18n } = useTranslation()
+  const resolvedLanguage = i18n.resolvedLanguage
+  const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
+  const schema = useMemo(() => {
+    void resolvedLanguage
+    return createStockSchema(t)
+  }, [resolvedLanguage, t])
   const form = useForm<StockValues>({ resolver: zodResolver(schema), values: { stock: String(product?.stock ?? 0) } })
+  const { clearErrors } = form
   const mutation = useMutation({ mutationFn: ({ id, stock }: { id: string; stock: number }) => productApi.updateStock(id, stock) })
+
+  useEffect(() => {
+    clearErrors()
+  }, [clearErrors, resolvedLanguage])
 
   const submit = form.handleSubmit(async ({ stock }) => {
     if (product === null) return
@@ -107,21 +158,30 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
       onClose()
     } catch (error: unknown) {
       const apiError = toApiError(error)
-      applyFieldErrors(apiError, form.setError, ['stock'])
-      setSubmitError(apiError.message)
+      for (const fieldError of apiError.fieldErrors) {
+        if (fieldError.field.replace(/^request\./, '') === 'stock') {
+          form.setError('stock', { type: 'server', message: translateApiFieldError(fieldError, t) })
+        }
+      }
+      setSubmitError(apiError)
     }
   })
 
   return (
-    <Dialog open={product !== null} title="Update stock" description={product === null ? undefined : `${product.name} (${product.id})`} onClose={onClose}>
+    <Dialog
+      open={product !== null}
+      title={t('admin.updateStock')}
+      description={product === null ? undefined : t('admin.productIdentity', { productName: product.name, productId: product.id })}
+      onClose={onClose}
+    >
       <form onSubmit={submit} noValidate>
         <div className={pageStyles.dialogBody}>
-          {submitError === null ? null : <p className={pageStyles.formMessage} role="alert">{submitError}</p>}
-          <Field id="updated-stock" label="Stock" inputMode="numeric" error={form.formState.errors.stock?.message} {...form.register('stock')} />
+          {submitError === null ? null : <p className={pageStyles.formMessage} role="alert">{translateApiError(submitError, t)}</p>}
+          <Field id="updated-stock" label={t('admin.stock')} inputMode="numeric" error={form.formState.errors.stock?.message} {...form.register('stock')} />
         </div>
         <div className={pageStyles.dialogActions}>
-          <Button type="button" variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button>
-          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? 'Saving…' : 'Save stock'}</Button>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={mutation.isPending}>{t('common.cancel')}</Button>
+          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t('admin.saving') : t('admin.saveStock')}</Button>
         </div>
       </form>
     </Dialog>
@@ -129,6 +189,8 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
 }
 
 export default function AdminProductsPage() {
+  const { t } = useTranslation()
+  const { formatNumber, formatWeight, formatYen } = useLocaleFormatters()
   const [search, setSearch] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [stockProduct, setStockProduct] = useState<Product | null>(null)
@@ -136,6 +198,7 @@ export default function AdminProductsPage() {
   const deferredSearch = useDeferredValue(search.trim())
   const queryClient = useQueryClient()
   const { showToast } = useToast()
+  useLocalizedDocumentTitle('admin.productManagementTitle')
   const products = useQuery({
     queryKey: queryKeys.products({ q: deferredSearch, inStockOnly: false }),
     queryFn: ({ signal }) => productApi.list({ q: deferredSearch, inStockOnly: false }, signal),
@@ -149,10 +212,10 @@ export default function AdminProductsPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.productsRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary }),
       ])
-      showToast('Product deleted. Historical order snapshots are unchanged.', 'success')
+      showToast(t('admin.productDeleted'), 'success')
       setDeleteProduct(null)
     },
-    onError: (error) => showToast(toApiError(error).message, 'error'),
+    onError: (error) => showToast(translateApiError(toApiError(error), t), 'error'),
   })
 
   const refreshProducts = async (message: string) => {
@@ -166,23 +229,23 @@ export default function AdminProductsPage() {
   return (
     <div>
       <div className={pageStyles.pageHeader}>
-        <div><h1>Products</h1><p>Add products, update current stock, and remove items from the catalog.</p></div>
-        <Button type="button" icon={<Plus />} onClick={() => setAddOpen(true)}>Add product</Button>
+        <div><h1>{t('admin.productManagementTitle')}</h1><p>{t('admin.productManagementIntro')}</p></div>
+        <Button type="button" icon={<Plus />} onClick={() => setAddOpen(true)}>{t('admin.addProduct')}</Button>
       </div>
       <div className={styles.toolbar}>
-        <label className={styles.toolbarSearch}><span className="srOnly">Search products</span><Search aria-hidden="true" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by ID or name" /></label>
+        <label className={styles.toolbarSearch}><span className="srOnly">{t('admin.searchProductsLabel')}</span><Search aria-hidden="true" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('admin.searchProductsPlaceholder')} /></label>
       </div>
       {products.isLoading ? <SkeletonRows /> : null}
-      {products.isError ? <ErrorState message="Product data is unavailable." onRetry={() => void products.refetch()} /> : null}
-      {products.data?.items.length === 0 ? <EmptyState title="No products found" description="Try a different ID or name, or add a new product." /> : null}
+      {products.isError ? <ErrorState message={t('admin.productLoadError')} onRetry={() => void products.refetch()} /> : null}
+      {products.data?.items.length === 0 ? <EmptyState title={t('admin.noProductsTitle')} description={t('admin.noProductsDescription')} /> : null}
       {products.data !== undefined && products.data.items.length > 0 ? (
         <div className={styles.tableSurface}>
           <table className={styles.table}>
-            <thead><tr><th>ID</th><th>Name</th><th>Price</th><th>Stock</th><th>Weight</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>{t('admin.productId')}</th><th>{t('admin.productName')}</th><th>{t('admin.price')}</th><th>{t('admin.stock')}</th><th>{t('admin.weight')}</th><th>{t('admin.status')}</th><th>{t('admin.actions')}</th></tr></thead>
             <tbody>
               {products.data.items.map((product) => {
                 const lowStockThreshold = summary.data?.lowStockThreshold ?? 5
-                const status = product.stock === 0 ? 'Out of stock' : product.stock <= lowStockThreshold ? 'Low stock' : 'In stock'
+                const status = product.stock === 0 ? t('admin.outOfStock') : product.stock <= lowStockThreshold ? t('admin.lowStock') : t('admin.inStock')
                 const statusClass = product.stock === 0 ? styles.statusOut : product.stock <= lowStockThreshold ? styles.statusLow : ''
                 return (
                   <tr key={product.id}>
@@ -194,12 +257,12 @@ export default function AdminProductsPage() {
                       </div>
                     </td>
                     <td>{formatYen(product.priceYen)}</td>
-                    <td>{product.stock}</td>
-                    <td>{product.weightKg} kg</td>
+                    <td>{formatNumber(product.stock)}</td>
+                    <td>{formatWeight(product.weightKg)}</td>
                     <td><span className={`${styles.status} ${statusClass}`}>{status}</span></td>
                     <td><div className={styles.rowActions}>
-                      <button type="button" onClick={() => setStockProduct(product)} aria-label={`Update stock for ${product.name}`}><Pencil /></button>
-                      <button type="button" onClick={() => setDeleteProduct(product)} aria-label={`Delete ${product.name}`}><Trash2 /></button>
+                      <button type="button" onClick={() => setStockProduct(product)} aria-label={t('admin.updateStockFor', { productName: product.name })}><Pencil /></button>
+                      <button type="button" onClick={() => setDeleteProduct(product)} aria-label={t('admin.deleteProductNamed', { productName: product.name })}><Trash2 /></button>
                     </div></td>
                   </tr>
                 )
@@ -209,18 +272,18 @@ export default function AdminProductsPage() {
         </div>
       ) : null}
 
-      <AddProductDialog open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void refreshProducts('Product added.')} />
-      <StockDialog product={stockProduct} onClose={() => setStockProduct(null)} onUpdated={() => void refreshProducts('Stock updated.')} />
+      <AddProductDialog open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void refreshProducts(t('admin.productAdded'))} />
+      <StockDialog product={stockProduct} onClose={() => setStockProduct(null)} onUpdated={() => void refreshProducts(t('admin.stockUpdated'))} />
       <Dialog
         open={deleteProduct !== null}
-        title="Delete product?"
-        description="The product will be removed from the catalog. Existing order snapshots will remain available."
+        title={t('admin.deleteProductTitle')}
+        description={t('admin.deleteProductDescription')}
         onClose={() => setDeleteProduct(null)}
       >
-        <div className={pageStyles.dialogBody}><p>Delete <strong>{deleteProduct?.name}</strong> ({deleteProduct?.id})?</p></div>
+        <div className={pageStyles.dialogBody}><p>{t('admin.deleteProductQuestion', { productName: deleteProduct?.name ?? '', productId: deleteProduct?.id ?? '' })}</p></div>
         <div className={pageStyles.dialogActions}>
-          <Button type="button" variant="secondary" onClick={() => setDeleteProduct(null)} disabled={deleteMutation.isPending}>Cancel</Button>
-          <Button type="button" variant="danger" onClick={() => { if (deleteProduct !== null) deleteMutation.mutate(deleteProduct.id) }} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete product'}</Button>
+          <Button type="button" variant="secondary" onClick={() => setDeleteProduct(null)} disabled={deleteMutation.isPending}>{t('common.cancel')}</Button>
+          <Button type="button" variant="danger" onClick={() => { if (deleteProduct !== null) deleteMutation.mutate(deleteProduct.id) }} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? t('admin.deleting') : t('admin.deleteProduct')}</Button>
         </div>
       </Dialog>
     </div>

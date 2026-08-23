@@ -1,8 +1,12 @@
 import { LogOut, Menu, ShoppingCart, User, UserPlus, X } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { useCart } from '../../cart/CartProvider'
+import { translateApiError } from '../../i18n/apiErrorLocalization'
+import { useLocaleFormatters } from '../../i18n/formatters'
+import { LanguageSelect } from '../../i18n/LanguageSelect'
 import { ThemeToggle } from '../../theme/ThemeToggle'
 import { useToast } from '../feedback/ToastProvider'
 import { Brand } from '../navigation/Brand'
@@ -14,19 +18,22 @@ function navClass({ isActive }: { isActive: boolean }) {
 
 export function PublicLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { t } = useTranslation()
   const { user, logout } = useAuth()
   const { itemCount } = useCart()
+  const { formatNumber } = useLocaleFormatters()
   const { showToast } = useToast()
   const location = useLocation()
   const navigate = useNavigate()
+  const formattedItemCount = formatNumber(itemCount)
 
   const handleLogout = async () => {
     try {
       await logout()
-      showToast('You have been logged out.', 'success')
+      showToast(t('auth.logoutSuccess'), 'success')
       void navigate('/products')
-    } catch {
-      showToast('Logout failed. Please try again.', 'error')
+    } catch (error) {
+      showToast(translateApiError(error, t), 'error')
     }
   }
 
@@ -39,7 +46,7 @@ export function PublicLayout() {
           <button
             className={styles.mobileMenuButton}
             type="button"
-            aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+            aria-label={menuOpen ? t('accessibility.closeNavigation') : t('accessibility.openNavigation')}
             aria-expanded={menuOpen}
             aria-controls="public-navigation"
             onClick={() => setMenuOpen((open) => !open)}
@@ -47,36 +54,41 @@ export function PublicLayout() {
             {menuOpen ? <X /> : <Menu />}
           </button>
           <Brand />
-          <nav id="public-navigation" className={`${styles.publicNav} ${menuOpen ? styles.navOpen : ''}`} aria-label="Main navigation">
-            <NavLink to="/products" className={navClass} onClick={closeMenu}>Products</NavLink>
+          <nav id="public-navigation" className={`${styles.publicNav} ${menuOpen ? styles.navOpen : ''}`} aria-label={t('accessibility.mainNavigation')}>
+            <NavLink to="/products" className={navClass} onClick={closeMenu}>{t('navigation.products')}</NavLink>
             {user?.role === 'ADMIN' ? (
-              <NavLink to="/admin" className={navClass} onClick={closeMenu}>Admin</NavLink>
+              <NavLink to="/admin" className={navClass} onClick={closeMenu}>{t('navigation.admin')}</NavLink>
             ) : (
               <NavLink to="/cart" className={navClass} onClick={closeMenu}>
-                <ShoppingCart aria-hidden="true" /> Cart <span key={itemCount} className={styles.cartCount}>{itemCount}</span>
+                <ShoppingCart aria-hidden="true" /> {t('navigation.cart')} <span key={itemCount} className={styles.cartCount}>{formattedItemCount}</span>
               </NavLink>
             )}
             {user?.role === 'CUSTOMER' ? (
-              <NavLink to="/orders" className={navClass} onClick={closeMenu}>My orders</NavLink>
+              <NavLink to="/orders" className={navClass} onClick={closeMenu}>{t('navigation.myOrders')}</NavLink>
             ) : null}
             {user === null ? (
               <>
-                <NavLink to="/login" className={navClass} onClick={closeMenu}><User aria-hidden="true" /> Login</NavLink>
-                <NavLink to="/register" className={navClass} onClick={closeMenu}><UserPlus aria-hidden="true" /> Register</NavLink>
+                <NavLink to="/login" className={navClass} onClick={closeMenu}><User aria-hidden="true" /> {t('navigation.login')}</NavLink>
+                <NavLink to="/register" className={navClass} onClick={closeMenu}><UserPlus aria-hidden="true" /> {t('navigation.register')}</NavLink>
               </>
             ) : (
               <button className={styles.navButton} type="button" onClick={() => { closeMenu(); void handleLogout() }}>
-                <LogOut aria-hidden="true" /> Log out
+                <LogOut aria-hidden="true" /> {t('navigation.logout')}
               </button>
             )}
           </nav>
           <div className={styles.headerActions}>
             {user?.role === 'ADMIN' ? null : (
-              <NavLink to="/cart" className={styles.mobileCart} aria-label={`Cart with ${itemCount} items`}>
+              <NavLink
+                to="/cart"
+                className={styles.mobileCart}
+                aria-label={t('accessibility.cartWithItems', { count: itemCount, formattedCount: formattedItemCount })}
+              >
                 <ShoppingCart aria-hidden="true" />
-                <span key={itemCount}>{itemCount}</span>
+                <span key={itemCount}>{formattedItemCount}</span>
               </NavLink>
             )}
+            <LanguageSelect />
             <ThemeToggle />
           </div>
         </div>

@@ -1,33 +1,60 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-const sharedPaths = [
+const explicitSharedPaths = [
   'app/providers.tsx',
+  'auth/RequireAuth.tsx',
+  'auth/RequireRole.tsx',
   'theme/theme.ts',
   'theme/ThemeProvider.tsx',
   'theme/ThemeToggle.tsx',
   'theme/theme.module.css',
+  'utils/currency.ts',
   'styles/tokens.css',
   'styles/global.css',
-  'components/layout/PublicLayout.tsx',
-  'components/layout/AdminLayout.tsx',
-  'components/layout/layout.module.css',
-  'components/ui/ui.module.css',
-  'components/feedback/feedback.module.css',
-  'features/products/productImages.ts',
-  'features/products/ProductImage.tsx',
-  'features/products/ProductImage.module.css',
-  'features/products/ProductList.tsx',
-  'features/products/products.module.css',
-  'features/orders/OrderCard.tsx',
-  'features/orders/orders.module.css',
   'features/admin/admin.module.css',
+  'components/navigation/Brand.tsx',
 ]
 
-const mappedScreens = ['CartPage.tsx', 'AdminProductsPage.tsx', 'pages.module.css']
+const sharedDirectories = [
+  'i18n',
+  'components/layout',
+  'components/feedback',
+  'components/ui',
+  'features/products',
+  'features/orders',
+]
+
+async function listRuntimeFiles(relativeDirectory) {
+  const directory = resolve(repositoryRoot, 'frontend/src', relativeDirectory)
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files = await Promise.all(entries.map(async (entry) => {
+    const relativePath = `${relativeDirectory}/${entry.name}`
+    if (entry.isDirectory()) return listRuntimeFiles(relativePath)
+    if (!entry.isFile() || /\.(test|spec)\.[cm]?[jt]sx?$/.test(entry.name)) return []
+    return [relativePath]
+  }))
+  return files.flat()
+}
+
+const discoveredSharedPaths = (await Promise.all(sharedDirectories.map(listRuntimeFiles))).flat()
+const sharedPaths = [...new Set([...explicitSharedPaths, ...discoveredSharedPaths])].sort()
+const mappedScreens = [
+  'ProductsPage.tsx',
+  'CartPage.tsx',
+  'OrdersPage.tsx',
+  'LoginPage.tsx',
+  'RegisterPage.tsx',
+  'AdminDashboardPage.tsx',
+  'AdminProductsPage.tsx',
+  'AdminOrdersPage.tsx',
+  'ForbiddenPage.tsx',
+  'NotFoundPage.tsx',
+  'pages.module.css',
+]
 const productImages = ['laptop.webp', 'mouse.webp', 'keyboard.webp', 'monitor.webp']
 const pairs = [
   ...sharedPaths.map((path) => [`frontend/src/${path}`, `site/src/${path}`]),

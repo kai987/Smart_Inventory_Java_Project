@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
 import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import styles from './feedback.module.css'
 
 type ToastTone = 'success' | 'error' | 'info'
@@ -23,6 +24,7 @@ const toastIcons = {
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextId = useRef(1)
 
@@ -52,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div className={`${styles.toast} ${styles[toast.tone]}`} key={toast.id} role="status">
               <Icon aria-hidden="true" />
               <span>{toast.message}</span>
-              <button type="button" onClick={() => removeToast(toast.id)} aria-label="Dismiss notification">
+              <button type="button" onClick={() => removeToast(toast.id)} aria-label={t('accessibility.dismissNotification')}>
                 <X size={18} />
               </button>
             </div>

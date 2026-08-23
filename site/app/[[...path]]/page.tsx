@@ -13,7 +13,7 @@ export default function SmartInventoryPage() {
   );
 
   if (!mounted) {
-    return <main aria-busy="true"><p className="srOnly">Loading Smart Inventory…</p></main>;
+    return <main aria-busy="true"><p className="srOnly">Smart Inventory</p></main>;
   }
 
   return (

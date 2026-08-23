@@ -47,6 +47,11 @@ jobs:
       - name: Build frontend
         run: npm --prefix frontend run build
 
+      - name: Check shared UI parity and untranslated UI
+        run: |
+          node scripts/check-shared-ui-parity.mjs
+          node scripts/check-untranslated-ui.mjs
+
       - name: Package frontend and backend as one JAR
         working-directory: backend
         run: ./mvnw clean package

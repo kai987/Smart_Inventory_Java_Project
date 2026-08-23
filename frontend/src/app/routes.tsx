@@ -21,7 +21,7 @@ function AdminRoutes() {
   return (
     <RequireAuth>
       <RequireRole role="ADMIN">
-        <Suspense fallback={<PageLoading label="Loading admin tools…" />}>
+        <Suspense fallback={<PageLoading />}>
           <AdminLayout />
         </Suspense>
       </RequireRole>

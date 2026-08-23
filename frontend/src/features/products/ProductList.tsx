@@ -1,12 +1,15 @@
 import { Check, ShoppingCart, Weight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Product } from '../../api/types'
 import { Button } from '../../components/ui/Button'
-import { formatYen } from '../../utils/currency'
+import { useLocaleFormatters } from '../../i18n/formatters'
 import { ProductImage } from './ProductImage'
 import styles from './products.module.css'
 
 export function ProductList({ products, canAdd, onAdd }: { products: Product[]; canAdd: boolean; onAdd: (product: Product) => void }) {
+  const { t } = useTranslation()
+  const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
   const [addedProductIds, setAddedProductIds] = useState<ReadonlySet<string>>(() => new Set())
   const feedbackTimers = useRef(new Map<string, number>())
 
@@ -58,18 +61,18 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
             </div>
             <dl className={styles.productFacts}>
               <div className={styles.priceFact}>
-                <dt>Price</dt>
+                <dt>{t('products.price')}</dt>
                 <dd>{formatYen(product.priceYen)}</dd>
               </div>
               <div>
-                <dt>Stock</dt>
+                <dt>{t('products.stock')}</dt>
                 <dd className={product.stock > 0 ? styles.inStock : styles.outOfStock}>
-                  <span aria-hidden="true" /> {product.stock}
+                  <span aria-hidden="true" /> {formatNumber(product.stock)}
                 </dd>
               </div>
               <div>
-                <dt>Weight</dt>
-                <dd><Weight aria-hidden="true" /> {product.weightKg} kg</dd>
+                <dt>{t('products.weight')}</dt>
+                <dd><Weight aria-hidden="true" /> {formatWeight(product.weightKg)}</dd>
               </div>
             </dl>
             {canAdd ? (
@@ -77,11 +80,11 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
                 type="button"
                 className={added ? styles.addedButton : ''}
                 icon={added ? <Check /> : <ShoppingCart />}
-                aria-label={product.stock === 0 ? 'Out of stock' : 'Add to cart'}
+                aria-label={product.stock === 0 ? t('products.outOfStock') : t('products.addToCart')}
                 disabled={!product.available || product.stock === 0}
                 onClick={() => handleAdd(product)}
               >
-                {product.stock === 0 ? 'Out of stock' : added ? 'Added' : 'Add to cart'}
+                {product.stock === 0 ? t('products.outOfStock') : added ? t('products.added') : t('products.addToCart')}
               </Button>
             ) : null}
           </article>

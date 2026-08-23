@@ -206,6 +206,15 @@
   backdrop-filter: blur(8px);
 }
 
+.adminTopActions,
+.adminMobileActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adminMobileActions { margin-left: auto; }
+
 .adminMain {
   min-width: 0;
   padding: 36px clamp(28px, 4vw, 64px) 72px;
@@ -213,6 +222,13 @@
 
 .adminMobileHeader,
 .drawerBackdrop { display: none; }
+
+@media (max-width: 1000px) and (min-width: 761px) {
+  .headerInner { gap: 16px; }
+  .headerInner .brand span { display: none; }
+  .navLink,
+  .navButton { padding-inline: 10px; }
+}
 
 @media (max-width: 900px) {
   .adminShell { display: block; }
@@ -231,7 +247,6 @@
     box-shadow: var(--shadow-nav);
     backdrop-filter: blur(8px);
   }
-  .adminMobileHeader > :last-child { margin-left: auto; }
   .adminTopBar { display: none; }
   .drawerBackdrop {
     position: fixed;
@@ -259,10 +274,11 @@
   .headerInner {
     width: calc(100% - 32px);
     min-height: 68px;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 12px;
   }
   .headerInner .brand { font-size: 1.18rem; }
+  .headerInner > .brand { position: absolute; left: 56px; }
   .headerInner .brandIcon { width: 30px; height: 30px; }
   .mobileMenuButton,
   .mobileCart {
@@ -318,7 +334,7 @@
   .publicMain { width: calc(100% - 32px); padding-top: 36px; }
 }
 
-@media (max-width: 440px) {
+@media (max-width: 480px) {
   .headerInner .brand span,
   .adminMobileHeader .brand span { display: none; }
 }

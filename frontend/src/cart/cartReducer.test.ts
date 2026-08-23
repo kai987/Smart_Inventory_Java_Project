@@ -14,4 +14,12 @@ describe('cartReducer', () => {
     expect(decremented.items[0]?.quantity).toBe(1)
     expect(cartReducer(decremented, { type: 'decrement', productId: 'P001' }).items).toEqual([])
   })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'preserves the item when setQuantity receives invalid quantity %s',
+    (quantity) => {
+      const state = { items: [{ productId: 'P001', quantity: 2 }] }
+      expect(cartReducer(state, { type: 'setQuantity', productId: 'P001', quantity })).toBe(state)
+    },
+  )
 })

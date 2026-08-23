@@ -43,4 +43,10 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
+  {
+    files: ['**/*.d.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-definitions': 'off',
+    },
+  },
 )

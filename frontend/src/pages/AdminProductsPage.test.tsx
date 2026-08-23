@@ -52,6 +52,6 @@ describe('AdminProductsPage', () => {
     renderWithProviders(<AdminProductsPage />, { user: { username: 'admin', role: 'ADMIN' } })
     await screen.findByText('No products found')
     await openAndFillProduct({ id: 'P005', price: '9800' })
-    expect(await screen.findByText('Server rejected this product name.')).toBeInTheDocument()
+    expect(await screen.findByText('Enter a valid product name.')).toBeInTheDocument()
   })
 })

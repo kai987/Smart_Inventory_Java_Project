@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { productApi } from '../api/productApi'
 import type { Product } from '../api/types'
 import { queryKeys } from '../app/queryClient'
@@ -10,15 +11,18 @@ import { ErrorState, EmptyState, SkeletonRows } from '../components/feedback/Que
 import { useToast } from '../components/feedback/ToastProvider'
 import { Switch } from '../components/ui/Switch'
 import { ProductList } from '../features/products/ProductList'
+import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
 import styles from './pages.module.css'
 
 export function ProductsPage() {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [inStockOnly, setInStockOnly] = useState(false)
   const deferredSearch = useDeferredValue(search.trim())
   const { user } = useAuth()
   const { dispatch } = useCart()
   const { showToast } = useToast()
+  useLocalizedDocumentTitle('products.title')
   const products = useQuery({
     queryKey: queryKeys.products({ q: deferredSearch, inStockOnly }),
     queryFn: ({ signal }) => productApi.list({ q: deferredSearch, inStockOnly }, signal),
@@ -27,30 +31,30 @@ export function ProductsPage() {
 
   const handleAdd = (product: Product) => {
     dispatch({ type: 'add', productId: product.id })
-    showToast(`${product.name} added to your cart.`, 'success')
+    showToast(t('products.addedToCart', { productName: product.name }), 'success')
   }
 
   return (
     <div>
-      <h1>Products</h1>
-      <section className={styles.productFilters} aria-label="Product filters">
+      <h1>{t('products.title')}</h1>
+      <section className={styles.productFilters} aria-label={t('products.filtersLabel')}>
         <label className={styles.searchField}>
-          <span className="srOnly">Search by ID or name</span>
+          <span className="srOnly">{t('products.searchLabel')}</span>
           <Search aria-hidden="true" />
           <input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by ID or name"
+            placeholder={t('products.searchPlaceholder')}
           />
         </label>
-        <Switch checked={inStockOnly} onChange={setInStockOnly} label="In stock only" />
+        <Switch checked={inStockOnly} onChange={setInStockOnly} label={t('products.inStockOnly')} />
       </section>
 
       {products.isLoading ? <SkeletonRows /> : null}
-      {products.isError ? <ErrorState message="Product data is unavailable." onRetry={() => void products.refetch()} /> : null}
+      {products.isError ? <ErrorState message={t('products.loadError')} onRetry={() => void products.refetch()} /> : null}
       {products.data?.items.length === 0 ? (
-        <EmptyState title="No products found" description="Try a different product ID or name, or turn off the stock filter." />
+        <EmptyState title={t('products.noResultsTitle')} description={t('products.noResultsDescription')} />
       ) : null}
       {products.data !== undefined && products.data.items.length > 0 ? (
         <ProductList products={products.data.items} canAdd={user?.role !== 'ADMIN'} onAdd={handleAdd} />

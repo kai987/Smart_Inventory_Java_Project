@@ -31,9 +31,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         }),
       }
     case 'setQuantity': {
-      if (!Number.isInteger(action.quantity) || action.quantity < 1) {
-        return { items: state.items.filter((item) => item.productId !== action.productId) }
-      }
+      if (!Number.isSafeInteger(action.quantity) || action.quantity < 1) return state
       return {
         items: state.items.map((item) =>
           item.productId === action.productId ? { ...item, quantity: action.quantity } : item,

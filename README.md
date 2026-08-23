@@ -23,6 +23,7 @@ The console and web versions do not share runtime data.
 - Admin dashboard, product creation, stock updates, product deletion, and order review
 - Historical order-item snapshots that remain readable after a product changes or is deleted
 - Accessible light and dark themes that follow the operating-system preference on first visit and persist the user's explicit choice
+- Complete English, Japanese, and Simplified Chinese interfaces with automatic language detection and a persistent right-side language selector
 - Locally served, optimized product photography with reusable loading and fallback behavior across the catalog, cart, orders, and admin views
 - UTF-8 CSV persistence with seed data, legacy-format migration, fail-fast loading, rollback on save failure, and lock-protected access
 - Consistent JSON errors for validation, authentication, authorization, domain, and persistence failures
@@ -48,7 +49,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 | --- | --- |
 | Backend | Java 21, Spring Boot 3.5.16, Spring MVC, Spring Security, Jakarta Bean Validation, Maven Wrapper |
 | Backend tests | JUnit 5, MockMvc, Spring Security Test |
-| Frontend | React 19, TypeScript strict mode, Vite, React Router, TanStack Query v5 |
+| Frontend | React 19, TypeScript strict mode, Vite, React Router, TanStack Query v5, i18next |
 | Forms and HTTP | React Hook Form, Zod, Axios |
 | UI | CSS Modules, Lucide React |
 | Frontend tests | Vitest, React Testing Library, Playwright |
@@ -192,7 +193,7 @@ For safety, the script accepts no path argument and only removes the repository'
 ./scripts/test.sh
 ```
 
-This runs backend tests, installs the locked frontend dependencies, lints the frontend, runs frontend unit tests once, and creates a production frontend build.
+This runs backend tests, installs the locked frontend dependencies, lints the frontend, runs frontend unit tests once, creates a production frontend build, checks shared UI parity, and scans for untranslated visible UI strings.
 
 ### Backend tests
 
@@ -301,6 +302,25 @@ The interface supports light and dark modes throughout the public and admin expe
 
 Images for the seeded products are optimized WebP files served from the application itself, so the runtime does not depend on third-party image hotlinks. A shared image component provides consistent sizing, loading, and fallbacks wherever products appear. Original sources, licenses, download dates, and transformations are documented in [`docs/THIRD_PARTY_ASSETS.md`](docs/THIRD_PARTY_ASSETS.md).
 
+## Internationalization
+
+The complete public and admin interfaces support three languages:
+
+- English (`en`, formatted with `en-US`)
+- Japanese (`ja`, formatted with `ja-JP`)
+- Simplified Chinese (`zh-CN`, formatted with `zh-CN`)
+
+On the first visit, the application checks a valid saved preference, then `navigator.languages`, then `navigator.language`, and finally falls back to English. English regional tags map to English, Japanese tags map to Japanese, and all currently recognized Chinese tags—including `zh-TW`—map to the available Simplified Chinese interface. The native-language selector appears in the right-side action area beside the theme control on public and admin layouts, including mobile headers.
+
+Language and theme are independent device-local preferences:
+
+```text
+smart-inventory-language:v1
+smart-inventory-theme:v1
+```
+
+Changing language updates the current page immediately without reloading, changing the URL, signing the user out, clearing the cart, or resetting the theme. JPY amounts, numbers, stock quantities, and weights use the active locale. Interface text, validation messages, accessible labels, notifications, and known API errors are translated; business data is not. Product names, usernames, product IDs, order IDs, roles, and historical order snapshots therefore remain exactly as stored by the backend or D1 database.
+
 ## Screenshots
 
 These captures were taken from the final executable JAR during an isolated browser QA run.
@@ -320,6 +340,22 @@ These captures were taken from the final executable JAR during an isolated brows
 ### Admin products — dark theme, desktop
 
 ![Admin product management in the dark theme on desktop](docs/screenshots/admin-dark-desktop.jpg)
+
+### Product catalog — Japanese, desktop
+
+![Product catalog in Japanese on desktop](docs/screenshots/products-ja-desktop.jpg)
+
+### Product catalog — Simplified Chinese, desktop
+
+![Product catalog in Simplified Chinese on desktop](docs/screenshots/products-zh-desktop.jpg)
+
+### Admin products — Japanese, desktop
+
+![Admin product management in Japanese on desktop](docs/screenshots/admin-ja-desktop.jpg)
+
+### Product catalog — Simplified Chinese, mobile
+
+![Product catalog in Simplified Chinese on mobile](docs/screenshots/products-zh-mobile.jpg)
 
 Files under `docs/design-reference/` are early design concepts rather than captures of the running application.
 

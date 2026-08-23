@@ -1,17 +1,20 @@
 import { AlertTriangle, Archive, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
 import styles from './feedback.module.css'
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation()
+
   return (
     <section className={styles.state} role="alert">
       <span className={`${styles.stateIcon} ${styles.errorIcon}`}>
         <AlertTriangle aria-hidden="true" />
       </span>
-      <h2>We couldn’t load this page</h2>
+      <h2>{t('errors.loadPageTitle')}</h2>
       <p>{message}</p>
       <Button type="button" variant="secondary" icon={<RefreshCw />} onClick={onRetry}>
-        Try again
+        {t('common.retry')}
       </Button>
     </section>
   )
@@ -31,8 +34,10 @@ export function EmptyState({ title, description, action }: { title: string; desc
 }
 
 export function SkeletonRows({ rows = 4 }: { rows?: number }) {
+  const { t } = useTranslation()
+
   return (
-    <div className={styles.skeletonList} role="status" aria-label="Loading content">
+    <div className={styles.skeletonList} role="status" aria-label={t('common.loadingContent')}>
       {Array.from({ length: rows }, (_, index) => (
         <div className={styles.skeletonRow} key={index}>
           <span className={styles.skeletonIcon} />

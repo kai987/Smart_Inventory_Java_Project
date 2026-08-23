@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import styles from './ui.module.css'
 
 export function Dialog({
@@ -15,6 +16,7 @@ export function Dialog({
   onClose: () => void
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const descriptionId = useId()
@@ -43,7 +45,7 @@ export function Dialog({
           <h2 id={titleId}>{title}</h2>
           {description === undefined ? null : <p id={descriptionId}>{description}</p>}
         </div>
-        <button type="button" className={styles.iconButton} onClick={onClose} aria-label={`Close ${title}`}>
+        <button type="button" className={styles.iconButton} onClick={onClose} aria-label={t('accessibility.closeDialog', { title })}>
           <X size={20} />
         </button>
       </header>
