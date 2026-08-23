@@ -1,11 +1,17 @@
 # Generated submission artifacts
 outputs/
+runtime-data/
 
 # IDE and build output
 .idea/
 out/
 *.class
 *.iml
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 
 # macOS and Microsoft Office temporary files
 .DS_Store

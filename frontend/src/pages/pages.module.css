@@ -1,0 +1,161 @@
+.productFilters {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  margin-bottom: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.searchField {
+  width: min(480px, 100%);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.searchField:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(9 105 218 / 14%);
+}
+
+.searchField svg { width: 21px; height: 21px; flex: none; color: var(--muted); }
+.searchField input { min-width: 0; flex: 1; border: 0; background: transparent; outline: none; }
+.searchField input::placeholder { color: #818da0; }
+
+.authPage {
+  width: min(1040px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.8fr);
+  gap: 28px;
+  margin: 8px auto 0;
+}
+
+.authCard,
+.demoPanel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.authCard { padding: clamp(26px, 5vw, 44px); }
+.authCard h1 { margin-bottom: 10px; font-size: clamp(2rem, 4vw, 2.5rem); }
+.authIntro { margin-bottom: 30px; color: var(--muted); }
+
+.form {
+  display: grid;
+  gap: 20px;
+}
+
+.form > button[type='submit'] { margin-top: 2px; }
+
+.formMessage {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #efb6b2;
+  border-radius: 9px;
+  background: var(--danger-soft);
+  color: #8f241d;
+  font-size: 0.92rem;
+  font-weight: 550;
+}
+
+.successMessage {
+  border-color: #a9ddbe;
+  background: var(--success-soft);
+  color: #176d3e;
+}
+
+.authFooter {
+  margin: 24px 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.demoPanel {
+  align-self: start;
+  padding: 30px;
+}
+
+.demoPanel h2 { margin-bottom: 10px; }
+.demoPanel > p { margin-bottom: 24px; color: var(--muted); }
+
+.demoAccount {
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+
+.demoAccount h3 { margin: 0 0 8px; font-size: 1rem; }
+.demoAccount dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 14px; }
+.demoAccount dt { color: var(--muted); }
+.demoAccount dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+.pageHeader h1 { margin-bottom: 8px; }
+.pageHeader p { margin: 0; color: var(--muted); }
+
+.surface {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding: 24px;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 24px 24px;
+}
+
+.dialogBody { padding: 22px 24px 0; }
+.dialogBody p:last-child { margin-bottom: 0; }
+
+.notFound {
+  min-height: 55vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.notFound strong { color: var(--accent); font-size: 5rem; line-height: 1; }
+.notFound h1 { margin: 18px 0 10px; }
+.notFound p { max-width: 480px; margin-bottom: 26px; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .productFilters {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .searchField { width: 100%; }
+  .authPage { grid-template-columns: 1fr; }
+  .demoPanel { padding: 24px; }
+  .pageHeader { align-items: stretch; flex-direction: column; }
+  .formGrid { grid-template-columns: 1fr; padding-inline: 18px; }
+  .dialogActions { padding-inline: 18px; }
+}

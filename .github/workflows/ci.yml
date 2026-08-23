@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    name: Test and package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run backend tests
+        working-directory: backend
+        run: ./mvnw test
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Lint frontend
+        run: npm --prefix frontend run lint
+
+      - name: Run frontend unit tests
+        run: npm --prefix frontend run test -- --run
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Package frontend and backend as one JAR
+        working-directory: backend
+        run: ./mvnw clean package
+
+      - name: Verify packaged application
+        run: |
+          test -f backend/target/smart-inventory-demo.jar
+          jar tf backend/target/smart-inventory-demo.jar > "$RUNNER_TEMP/jar-contents.txt"
+          grep -Fx 'BOOT-INF/classes/static/index.html' "$RUNNER_TEMP/jar-contents.txt"
+
+      - name: Install Sites dependencies
+        working-directory: site
+        run: npx --yes npm@11.6.2 ci
+
+      - name: Test Sites domain rules
+        run: npm --prefix site run test
+
+      - name: Lint Sites deployment
+        run: npm --prefix site run lint
+
+      - name: Build Sites deployment
+        run: npm --prefix site run build

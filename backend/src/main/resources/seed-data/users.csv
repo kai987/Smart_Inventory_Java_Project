@@ -1,0 +1,4 @@
+admin,{bcrypt}$2a$10$lwkKvL9uD7fiSsIWh20HUet/SUogG23uy0nBbhRtMn07OU0mMefrS,ADMIN
+customer,{bcrypt}$2a$10$qQyB2/rO7/Bm6iKSe9c2lO97mXe3M5KCvWNuL91N4l2yf57WDu6TK,CUSTOMER
+yqk,{bcrypt}$2a$10$X/DV3XJOiGCFSqQqOktq/.KblYc2n8VhQlH5J1Ur.NTt.NZTaQWFi,CUSTOMER
+job,{bcrypt}$2a$10$.x.Sp3v5Yhmwrff7Y5D08.8fYyQgAJCKmJLhWCY90HMC0ClEKB85y,CUSTOMER
