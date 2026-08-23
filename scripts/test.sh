@@ -16,3 +16,4 @@ npm --prefix frontend ci
 npm --prefix frontend run lint
 npm --prefix frontend run test -- --run
 npm --prefix frontend run build
+node scripts/check-shared-ui-parity.mjs

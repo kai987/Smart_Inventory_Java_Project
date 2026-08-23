@@ -26,9 +26,10 @@ describe('CartPage', () => {
   it('clamps stored quantity to current stock', async () => {
     seedCart(5)
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
-    renderWithProviders(<CartPage />)
+    const { container } = renderWithProviders(<CartPage />)
     const input = await screen.findByRole('spinbutton', { name: 'Quantity for Laptop' })
     await waitFor(() => expect(input).toHaveValue(2))
+    expect(container.querySelector('img')).toHaveAttribute('src', '/product-images/laptop.webp')
     expect(await screen.findByText(/adjusted to the available stock/i)).toBeInTheDocument()
   })
 

@@ -5,18 +5,19 @@
   z-index: 30;
   top: 0;
   border-bottom: 1px solid var(--border);
-  background: rgb(255 255 255 / 96%);
+  background: var(--header-surface);
   box-shadow: var(--shadow-nav);
   backdrop-filter: blur(8px);
 }
 
 .headerInner {
+  position: relative;
   width: min(var(--content), calc(100% - 48px));
   min-height: 74px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 32px;
+  justify-content: flex-start;
+  gap: 24px;
   margin: 0 auto;
 }
 
@@ -42,6 +43,7 @@
 }
 
 .publicNav {
+  margin-left: auto;
   display: flex;
   align-items: stretch;
   align-self: stretch;
@@ -62,13 +64,14 @@
   color: var(--text);
   font-weight: 550;
   text-decoration: none;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .navLink svg,
 .navButton svg { width: 20px; height: 20px; }
 .navLink:hover,
-.navButton:hover { background: var(--surface-subtle); text-decoration: none; }
-.navLink.active { border-bottom-color: var(--accent); color: var(--accent); }
+.navButton:hover { background: var(--surface-hover); text-decoration: none; }
+.navLink.active { border-bottom-color: var(--accent); background: var(--nav-active); color: var(--accent); }
 
 .cartCount {
   min-width: 23px;
@@ -78,9 +81,10 @@
   padding: 0 6px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 0.76rem;
   font-weight: 750;
+  animation: cart-badge-pop 240ms ease-out;
 }
 
 .publicMain {
@@ -89,8 +93,19 @@
   padding: 48px 0 72px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .mobileMenuButton,
 .mobileCart { display: none; }
+
+.routeTransition {
+  min-width: 0;
+  animation: route-enter 180ms ease-out both;
+}
 
 .adminShell {
   min-height: 100vh;
@@ -130,9 +145,9 @@
 }
 
 .adminLink svg { width: 21px; height: 21px; }
-.adminLink:hover { background: var(--surface-subtle); text-decoration: none; }
-.adminActive { background: var(--accent-soft); color: var(--accent); }
-.adminActive:hover { background: var(--accent-soft); }
+.adminLink:hover { background: var(--surface-hover); text-decoration: none; }
+.adminActive { background: var(--nav-active); color: var(--accent); }
+.adminActive:hover { background: var(--nav-active); }
 
 .adminUser {
   display: grid;
@@ -150,7 +165,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #edf1f6;
+  background: var(--neutral-soft);
   color: var(--muted);
 }
 
@@ -159,7 +174,7 @@
 .adminUser strong { overflow: hidden; text-overflow: ellipsis; }
 .adminUser span:not(.avatar) { color: var(--muted); font-size: 0.78rem; }
 .adminUser button,
-.adminMobileHeader button,
+.adminMobileHeader > button:first-child,
 .drawerClose {
   width: 44px;
   height: 44px;
@@ -171,12 +186,29 @@
   color: var(--muted);
 }
 .adminUser button:hover,
-.adminMobileHeader button:hover,
-.drawerClose:hover { background: var(--surface-subtle); color: var(--text); }
+.adminMobileHeader > button:first-child:hover,
+.drawerClose:hover { background: var(--surface-hover); color: var(--text); }
+
+.adminContent { min-width: 0; }
+
+.adminTopBar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 clamp(28px, 4vw, 64px);
+  border-bottom: 1px solid var(--border);
+  background: var(--header-surface);
+  box-shadow: var(--shadow-nav);
+  backdrop-filter: blur(8px);
+}
 
 .adminMain {
   min-width: 0;
-  padding: 56px clamp(28px, 4vw, 64px) 72px;
+  padding: 36px clamp(28px, 4vw, 64px) 72px;
 }
 
 .adminMobileHeader,
@@ -195,15 +227,19 @@
     gap: 14px;
     padding: 0 20px;
     border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--header-surface);
     box-shadow: var(--shadow-nav);
+    backdrop-filter: blur(8px);
   }
+  .adminMobileHeader > :last-child { margin-left: auto; }
+  .adminTopBar { display: none; }
   .drawerBackdrop {
     position: fixed;
     z-index: 100;
     inset: 0;
     display: block;
-    background: rgb(23 32 51 / 52%);
+    background: var(--overlay);
+    animation: backdrop-enter 180ms ease-out both;
   }
   .adminDrawer {
     width: min(300px, 88vw);
@@ -213,6 +249,7 @@
     flex-direction: column;
     background: var(--surface);
     box-shadow: var(--shadow-dialog);
+    animation: drawer-enter 200ms ease-out both;
   }
   .drawerClose { position: absolute; z-index: 1; top: 17px; right: 12px; }
   .adminMain { padding: 36px 24px 64px; }
@@ -231,7 +268,6 @@
   .mobileCart {
     width: 44px;
     height: 44px;
-    position: absolute;
     display: grid;
     place-items: center;
     border: 1px solid var(--border);
@@ -239,8 +275,9 @@
     background: var(--surface);
     color: var(--text);
   }
-  .mobileMenuButton { left: 16px; }
-  .mobileCart { right: 16px; border: 0; }
+  .mobileMenuButton { position: absolute; left: 0; }
+  .headerActions { position: absolute; right: 0; }
+  .mobileCart { position: relative; border: 0; }
   .mobileCart > span {
     min-width: 21px;
     height: 21px;
@@ -252,29 +289,70 @@
     padding: 0 5px;
     border-radius: 999px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 0.7rem;
     font-weight: 750;
+    animation: cart-badge-pop 240ms ease-out;
   }
   .publicNav {
-    display: none;
     position: absolute;
     top: calc(100% + 1px);
-    left: 0;
-    right: 0;
+    left: -16px;
+    right: -16px;
+    display: grid;
+    margin-left: 0;
     padding: 10px 16px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     box-shadow: var(--shadow-nav);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity 180ms ease, transform 180ms ease, visibility 180ms;
   }
-  .publicNav.navOpen { display: grid; }
+  .publicNav.navOpen { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
   .navLink,
   .navButton { min-height: 48px; justify-content: flex-start; border: 0; border-radius: 9px; }
-  .navLink.active { background: var(--accent-soft); }
+  .navLink.active { background: var(--nav-active); }
   .publicMain { width: calc(100% - 32px); padding-top: 36px; }
 }
 
+@media (max-width: 440px) {
+  .headerInner .brand span,
+  .adminMobileHeader .brand span { display: none; }
+}
+
 @media (max-width: 390px) {
-  .headerInner .brand span { max-width: 145px; overflow: hidden; white-space: nowrap; }
   .adminMain { padding-inline: 16px; }
+}
+
+@keyframes route-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drawer-enter {
+  from { transform: translateX(-14px); }
+  to { transform: translateX(0); }
+}
+
+@keyframes cart-badge-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routeTransition,
+  .drawerBackdrop,
+  .adminDrawer,
+  .cartCount,
+  .mobileCart > span { animation: none; }
+
+  .publicNav { transition: none; }
 }

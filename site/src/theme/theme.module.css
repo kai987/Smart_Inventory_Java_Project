@@ -1,0 +1,58 @@
+.themeToggle {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-control);
+  color: var(--text);
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.themeToggle:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.themeToggle:active { transform: scale(0.96); }
+
+.themeToggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.themeIcon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  transform-origin: center;
+}
+
+.themeIcon svg { width: 20px; height: 20px; }
+
+:global(html[data-theme-transitioning='true']) .themeIcon {
+  animation: theme-icon-in 220ms ease-out;
+}
+
+@keyframes theme-icon-in {
+  from { opacity: 0.55; transform: rotate(-120deg) scale(0.85); }
+  to { opacity: 1; transform: rotate(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .themeToggle,
+  .themeToggle:hover,
+  .themeToggle:active {
+    transition: none;
+    transform: none;
+  }
+
+  :global(html[data-theme-transitioning='true']) .themeIcon { animation: none; }
+}

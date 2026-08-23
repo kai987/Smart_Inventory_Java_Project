@@ -7,6 +7,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface);
+  transition: background-color 220ms ease, border-color 220ms ease;
 }
 
 .searchField {
@@ -18,17 +19,18 @@
   padding: 0 15px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  background: var(--surface);
+  background: var(--surface-elevated);
+  transition: background-color 220ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .searchField:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgb(9 105 218 / 14%);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .searchField svg { width: 21px; height: 21px; flex: none; color: var(--muted); }
 .searchField input { min-width: 0; flex: 1; border: 0; background: transparent; outline: none; }
-.searchField input::placeholder { color: #818da0; }
+.searchField input::placeholder { color: var(--placeholder); }
 
 .authPage {
   width: min(1040px, 100%);
@@ -42,7 +44,8 @@
 .demoPanel {
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
-  background: var(--surface);
+  background: var(--surface-elevated);
+  transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
 }
 
 .authCard { padding: clamp(26px, 5vw, 44px); }
@@ -59,18 +62,18 @@
 .formMessage {
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid #efb6b2;
+  border: 1px solid var(--danger-border);
   border-radius: 9px;
   background: var(--danger-soft);
-  color: #8f241d;
+  color: var(--danger-text);
   font-size: 0.92rem;
   font-weight: 550;
 }
 
 .successMessage {
-  border-color: #a9ddbe;
+  border-color: var(--success-border);
   background: var(--success-soft);
-  color: #176d3e;
+  color: var(--success-text);
 }
 
 .authFooter {
@@ -112,7 +115,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface);
+  transition: background-color 220ms ease, border-color 220ms ease;
 }
+
+.formMessageWide { grid-column: 1 / -1; }
 
 .formGrid {
   display: grid;

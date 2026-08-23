@@ -1,0 +1,64 @@
+.frame {
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--image-canvas, var(--surface-subtle));
+  color: var(--muted);
+  aspect-ratio: 4 / 3;
+}
+
+.catalog {
+  width: 112px;
+  border-radius: 11px;
+}
+
+.cart {
+  width: 72px;
+  border-radius: 9px;
+}
+
+.admin {
+  width: 48px;
+  border-radius: 7px;
+}
+
+.order {
+  width: 44px;
+  border-radius: 7px;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  filter: blur(4px);
+  transform: scale(0.985);
+  transition: opacity 220ms ease, filter 220ms ease, transform 220ms ease;
+}
+
+.loaded {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+
+.fallback svg {
+  width: 42%;
+  height: 42%;
+  stroke-width: 1.8;
+}
+
+@media (max-width: 720px) {
+  .catalog { width: 92px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image {
+    filter: none;
+    transform: none;
+    transition: none;
+  }
+}

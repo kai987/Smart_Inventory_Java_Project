@@ -1,8 +1,9 @@
 import { LogOut, Menu, ShoppingCart, User, UserPlus, X } from 'lucide-react'
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { useCart } from '../../cart/CartProvider'
+import { ThemeToggle } from '../../theme/ThemeToggle'
 import { useToast } from '../feedback/ToastProvider'
 import { Brand } from '../navigation/Brand'
 import styles from './layout.module.css'
@@ -16,6 +17,7 @@ export function PublicLayout() {
   const { user, logout } = useAuth()
   const { itemCount } = useCart()
   const { showToast } = useToast()
+  const location = useLocation()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -51,7 +53,7 @@ export function PublicLayout() {
               <NavLink to="/admin" className={navClass} onClick={closeMenu}>Admin</NavLink>
             ) : (
               <NavLink to="/cart" className={navClass} onClick={closeMenu}>
-                <ShoppingCart aria-hidden="true" /> Cart <span className={styles.cartCount}>{itemCount}</span>
+                <ShoppingCart aria-hidden="true" /> Cart <span key={itemCount} className={styles.cartCount}>{itemCount}</span>
               </NavLink>
             )}
             {user?.role === 'CUSTOMER' ? (
@@ -68,16 +70,21 @@ export function PublicLayout() {
               </button>
             )}
           </nav>
-          {user?.role === 'ADMIN' ? null : (
-            <NavLink to="/cart" className={styles.mobileCart} aria-label={`Cart with ${itemCount} items`}>
-              <ShoppingCart aria-hidden="true" />
-              <span>{itemCount}</span>
-            </NavLink>
-          )}
+          <div className={styles.headerActions}>
+            {user?.role === 'ADMIN' ? null : (
+              <NavLink to="/cart" className={styles.mobileCart} aria-label={`Cart with ${itemCount} items`}>
+                <ShoppingCart aria-hidden="true" />
+                <span key={itemCount}>{itemCount}</span>
+              </NavLink>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main className={styles.publicMain}>
-        <Outlet />
+        <div key={location.pathname} className={styles.routeTransition}>
+          <Outlet />
+        </div>
       </main>
     </div>
   )

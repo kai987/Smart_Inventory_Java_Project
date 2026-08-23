@@ -1,7 +1,8 @@
 import { Boxes, ClipboardList, Home, LogOut, Menu, Package, UserRound, X } from 'lucide-react'
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
+import { ThemeToggle } from '../../theme/ThemeToggle'
 import { useToast } from '../feedback/ToastProvider'
 import { Brand } from '../navigation/Brand'
 import styles from './layout.module.css'
@@ -14,6 +15,7 @@ export function AdminLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { user, logout } = useAuth()
   const { showToast } = useToast()
+  const location = useLocation()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -51,6 +53,7 @@ export function AdminLayout() {
       <header className={styles.adminMobileHeader}>
         <button type="button" onClick={() => setDrawerOpen(true)} aria-label="Open admin navigation"><Menu /></button>
         <Brand />
+        <ThemeToggle />
       </header>
       {drawerOpen ? (
         <div className={styles.drawerBackdrop} role="presentation" onMouseDown={closeDrawer}>
@@ -60,9 +63,14 @@ export function AdminLayout() {
           </aside>
         </div>
       ) : null}
-      <main className={styles.adminMain}>
-        <Outlet />
-      </main>
+      <div className={styles.adminContent}>
+        <div className={styles.adminTopBar}><ThemeToggle /></div>
+        <main className={styles.adminMain}>
+          <div key={location.pathname} className={styles.routeTransition}>
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

@@ -36,9 +36,12 @@ describe('ProductsPage', () => {
 
   it('adds a product and updates the cart count', async () => {
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
-    renderWithProviders(<><ProductsPage /><CartCount /></>)
+    const { container } = renderWithProviders(<><ProductsPage /><CartCount /></>)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Add to cart' }))
+    const addButton = await screen.findByRole('button', { name: 'Add to cart' })
+    expect(container.querySelector('img')).toHaveAttribute('src', '/product-images/laptop.webp')
+    await user.click(addButton)
     expect(screen.getByLabelText('Test cart count')).toHaveTextContent('1')
+    expect(addButton).toHaveTextContent('Added')
   })
 })

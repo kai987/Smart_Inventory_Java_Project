@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Minus, Package, Plus, ShoppingBag, Trash2 } from 'lucide-react'
+import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { orderApi } from '../api/orderApi'
@@ -11,6 +11,7 @@ import { useCart } from '../cart/CartProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
+import { ProductImage } from '../features/products/ProductImage'
 import { formatYen, multiplyYen } from '../utils/currency'
 import orderStyles from '../features/orders/orders.module.css'
 import pageStyles from './pages.module.css'
@@ -121,7 +122,12 @@ export function CartPage() {
               return (
                 <article className={`${orderStyles.cartRow} ${unavailable ? orderStyles.unavailable : ''}`} key={cartItem.productId}>
                   <div className={orderStyles.cartIdentity}>
-                    <span className={orderStyles.cartIcon}><Package aria-hidden="true" /></span>
+                    <ProductImage
+                      productId={cartItem.productId}
+                      productName={product?.name ?? cartItem.productId}
+                      variant="cart"
+                      alt=""
+                    />
                     <div>
                       <strong>{product?.name ?? 'Product no longer available'}</strong>
                       <span>{cartItem.productId}</span>

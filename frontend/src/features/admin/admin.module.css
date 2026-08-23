@@ -15,6 +15,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
 .metricIcon {
@@ -30,7 +31,7 @@
 .metricIcon svg { width: 23px; height: 23px; }
 .metricCard:nth-child(2) .metricIcon,
 .metricCard:nth-child(6) .metricIcon { background: var(--success-soft); color: var(--success); }
-.metricCard:nth-child(4) .metricIcon { background: #f0edff; color: #6346d8; }
+.metricCard:nth-child(4) .metricIcon { background: var(--accent-soft); color: var(--accent); }
 .metricCard:nth-child(5) .metricIcon { background: var(--warning-soft); color: var(--warning); }
 .metricCard span { display: block; color: var(--muted); font-size: 0.78rem; }
 .metricCard strong { display: block; margin-top: 4px; color: var(--text-strong); font-size: 1.55rem; line-height: 1.1; }
@@ -48,18 +49,19 @@
   border-radius: var(--radius-surface);
   background: var(--surface);
   overflow: hidden;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .panelHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--border); }
 .panelHeader h2 { margin: 0; }
 .panelHeader a { font-weight: 600; }
 .miniList { display: grid; }
-.miniRow { min-height: 62px; display: grid; grid-template-columns: minmax(0, 1.5fr) 1fr auto; align-items: center; gap: 14px; padding: 12px 24px; }
+.miniRow { min-height: 62px; display: grid; grid-template-columns: minmax(0, 1.5fr) 1fr auto; align-items: center; gap: 14px; padding: 12px 24px; transition: background-color 160ms ease; }
 .miniRow + .miniRow { border-top: 1px solid var(--border); }
 .miniRow strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .miniRow span { color: var(--muted); font-size: 0.88rem; }
 .emptyPanel { min-height: 300px; display: grid; place-content: center; justify-items: center; padding: 30px; color: var(--muted); text-align: center; }
-.emptyPanel svg { width: 42px; height: 42px; margin-bottom: 14px; color: #98a3b3; }
+.emptyPanel svg { width: 42px; height: 42px; margin-bottom: 14px; color: var(--muted); }
 
 .toolbar {
   display: flex;
@@ -81,7 +83,7 @@
   background: var(--surface);
 }
 
-.toolbarSearch:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(9 105 218 / 14%); }
+.toolbarSearch:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
 .toolbarSearch svg { width: 19px; height: 19px; flex: none; color: var(--muted); }
 .toolbarSearch input { min-width: 0; flex: 1; border: 0; background: transparent; outline: none; }
 
@@ -90,9 +92,12 @@
 .table th { padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-subtle); color: var(--muted); font-size: 0.79rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0.035em; }
 .table td { padding: 17px 18px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .table tbody tr:last-child td { border-bottom: 0; }
-.table tbody tr:hover { background: #fbfcfe; }
+.table tbody tr { transition: background-color 160ms ease; }
+.table tbody tr:hover { background: var(--table-row-hover); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; }
 .nameCell { font-weight: 650; }
+.productIdentity { min-width: 190px; display: flex; align-items: center; gap: 12px; }
+.productIdentity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status { display: inline-flex; align-items: center; gap: 7px; font-size: 0.88rem; font-weight: 650; }
 .status::before { width: 9px; height: 9px; border-radius: 50%; background: var(--success); content: ''; }
 .statusLow { color: var(--warning); }
@@ -100,26 +105,41 @@
 .statusOut { color: var(--danger); }
 .statusOut::before { background: var(--danger); }
 .rowActions { display: flex; gap: 6px; }
-.rowActions button { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); }
+.rowActions button { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease; }
 .rowActions button:hover { border-color: var(--accent); color: var(--accent); }
 .rowActions button:last-child:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .rowActions svg { width: 18px; height: 18px; }
 
 .adminOrderList { display: grid; gap: 14px; }
-.adminOrder { border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--surface); overflow: hidden; }
-.adminOrder summary { min-height: 84px; display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 1fr) repeat(3, minmax(100px, .7fr)) 28px; align-items: center; gap: 20px; padding: 16px 22px; cursor: pointer; list-style: none; }
+.adminOrder { border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--surface); overflow: hidden; transition: border-color 180ms ease, box-shadow 180ms ease; }
+.adminOrder summary { min-height: 84px; display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 1fr) repeat(3, minmax(100px, .7fr)) 28px; align-items: center; gap: 20px; padding: 16px 22px; cursor: pointer; list-style: none; transition: background-color 160ms ease; }
 .adminOrder summary::-webkit-details-marker { display: none; }
 .adminOrder summary > div { min-width: 0; display: grid; }
 .adminOrder summary span { color: var(--muted); font-size: 0.77rem; }
 .adminOrder summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adminOrder summary > svg { width: 19px; height: 19px; color: var(--muted); transition: transform 140ms ease; }
 .adminOrder[open] summary > svg { transform: rotate(180deg); }
-.adminOrderItems { border-top: 1px solid var(--border); background: #fbfcfe; }
-.adminOrderItem { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(100px, .8fr)); gap: 18px; padding: 14px 22px; }
+.adminOrderItems { border-top: 1px solid var(--border); background: var(--surface-subtle); }
+.adminOrderItem { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(100px, .8fr)); gap: 18px; padding: 14px 22px; transition: background-color 160ms ease; }
 .adminOrderItem + .adminOrderItem { border-top: 1px solid var(--border); }
 .adminOrderItem div { display: grid; }
 .adminOrderItem span { color: var(--muted); font-size: 0.75rem; }
 .adminOrderItem strong { font-size: 0.88rem; }
+
+@media (hover: hover) and (pointer: fine) {
+  .metricCard:hover,
+  .panel:hover,
+  .adminOrder:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-card, var(--shadow-nav));
+  }
+
+  .metricCard:hover { transform: translateY(-1px); }
+  .miniRow:hover,
+  .adminOrder summary:hover,
+  .adminOrderItem:hover { background: var(--surface-hover); }
+  .rowActions button:active { transform: scale(0.96); }
+}
 
 @media (max-width: 1300px) {
   .metricGrid { grid-template-columns: repeat(3, 1fr); }
@@ -144,4 +164,22 @@
   .adminOrder summary > div { grid-column: 1; }
   .adminOrder summary > svg { grid-column: 2; grid-row: 1; }
   .adminOrderItem { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metricCard,
+  .panel,
+  .miniRow,
+  .table tbody tr,
+  .rowActions button,
+  .adminOrder,
+  .adminOrder summary,
+  .adminOrderItem {
+    transition: none;
+  }
+
+  .metricCard:hover,
+  .rowActions button:active {
+    transform: none;
+  }
 }

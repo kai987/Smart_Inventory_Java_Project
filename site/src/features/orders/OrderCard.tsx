@@ -1,6 +1,7 @@
-import { ChevronDown, Package } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import type { Order } from '../../api/types'
 import { formatYen } from '../../utils/currency'
+import { ProductImage } from '../products/ProductImage'
 import styles from './orders.module.css'
 
 export function OrderCard({ order }: { order: Order }) {
@@ -23,7 +24,7 @@ export function OrderCard({ order }: { order: Order }) {
         <div className={styles.snapshotList}>
           {order.items.map((item) => (
             <div className={styles.snapshot} key={item.productId}>
-              <span className={styles.snapshotIcon}><Package aria-hidden="true" /></span>
+              <ProductImage productId={item.productId} productName={item.productName} variant="order" alt="" />
               <div className={styles.snapshotName}><strong>{item.productName}</strong><span>{item.productId}</span></div>
               <div><span>Unit price</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
               <div><span>Quantity</span><strong>{item.quantity}</strong></div>

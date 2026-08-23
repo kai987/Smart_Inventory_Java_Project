@@ -7,6 +7,8 @@ import { productApi } from '../api/productApi'
 import { renderWithProviders } from '../test/render'
 import AdminProductsPage from './AdminProductsPage'
 
+const laptop = { id: 'P001', name: 'Laptop', priceYen: '120000', stock: 8, weightKg: 3, available: true }
+
 async function openAndFillProduct(values: { id: string; price: string }) {
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Add product' }))
@@ -20,6 +22,14 @@ async function openAndFillProduct(values: { id: string; price: string }) {
 }
 
 describe('AdminProductsPage', () => {
+  it('renders the mapped local product thumbnail in the table', async () => {
+    vi.spyOn(adminApi, 'summary').mockResolvedValue({ productCount: 1, totalStock: 8, orderCount: 0, customerCount: 0, lowStockCount: 0, lowStockThreshold: 5, inventoryValueYen: '960000' })
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
+    const { container } = renderWithProviders(<AdminProductsPage />, { user: { username: 'admin', role: 'ADMIN' } })
+    expect(await screen.findByRole('cell', { name: 'Laptop' })).toBeInTheDocument()
+    expect(container.querySelector('img')).toHaveAttribute('src', '/product-images/laptop.webp')
+  })
+
   it('validates product ID and whole-yen price', async () => {
     vi.spyOn(adminApi, 'summary').mockResolvedValue({ productCount: 0, totalStock: 0, orderCount: 0, customerCount: 0, lowStockCount: 0, lowStockThreshold: 5, inventoryValueYen: '0' })
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [], total: 0 })

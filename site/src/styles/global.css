@@ -15,6 +15,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background: var(--page);
+  color: var(--text);
   font-size: 16px;
   line-height: 1.5;
 }
@@ -37,9 +38,13 @@ summary {
 }
 
 :focus-visible {
-  outline: 3px solid rgb(9 105 218 / 32%);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+::selection { background: var(--accent-soft); color: var(--text-strong); }
+
+::placeholder { color: var(--placeholder); }
 
 a {
   color: var(--accent);
@@ -84,6 +89,21 @@ svg {
   display: block;
 }
 
+/* Theme colors animate only after an explicit user action. */
+html[data-theme-transitioning='true'],
+html[data-theme-transitioning='true'] body,
+html[data-theme-transitioning='true'] :where(header, main, aside, nav, section, article, div, form, table, tr, th, td, dialog, button, input, select, textarea, a) {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 220ms;
+  transition-timing-function: ease;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: ease;
+}
+
 .srOnly {
   position: absolute;
   width: 1px;
@@ -105,4 +125,7 @@ svg {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none !important; }
 }

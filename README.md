@@ -22,6 +22,8 @@ The console and web versions do not share runtime data.
 - Atomic stock validation: repeated cart lines are merged and an insufficient item rejects the whole order without changing stock
 - Admin dashboard, product creation, stock updates, product deletion, and order review
 - Historical order-item snapshots that remain readable after a product changes or is deleted
+- Accessible light and dark themes that follow the operating-system preference on first visit and persist the user's explicit choice
+- Locally served, optimized product photography with reusable loading and fallback behavior across the catalog, cart, orders, and admin views
 - UTF-8 CSV persistence with seed data, legacy-format migration, fail-fast loading, rollback on save failure, and lock-protected access
 - Consistent JSON errors for validation, authentication, authorization, domain, and persistence failures
 - Backend, frontend unit, and browser end-to-end test suites
@@ -66,9 +68,9 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 ├── .github/workflows/       Continuous integration
 ├── docs/design-reference/   Design concepts, not runtime screenshots
 ├── docs/screenshots/        Verified captures from the running production JAR
+├── docs/THIRD_PARTY_ASSETS.md  Product-image sources, licenses, and transformations
 ├── README.md
-├── LICENSE
-└── Final_Project_Topic_Proposal_袁青凱_M25W0243.pdf
+└── LICENSE
 ```
 
 ## Requirements
@@ -290,24 +292,34 @@ Concurrent reads use a read lock. Registration, inventory changes, and order cre
 - The backup-and-replace process reduces multi-file failure risk but is not equivalent to an ACID database transaction or durable write-ahead log.
 - Large product and order collections are held in memory and API list endpoints are not paginated.
 - Demo accounts use published passwords. The application has no password reset, email verification, multi-factor authentication, account lockout, or production-grade rate limiting.
-- User administration, product image upload, payment, shipping integration, and real warehouse bin tracking are outside this demo's scope.
+- User administration, product image upload, payment, shipping integration, and real warehouse bin tracking are outside this demo's scope. The included demo products instead use bundled, ID-mapped images.
 - Browser E2E tests target the configured local Chromium environment; broader browser and device coverage would be required for production release.
+
+## Theme and product imagery
+
+The interface supports light and dark modes throughout the public and admin experiences. On a first visit it follows the operating system's color-scheme preference; after the user changes the theme, that explicit choice is stored locally and restored on later visits. Motion is intentionally brief and respects the browser's reduced-motion preference.
+
+Images for the seeded products are optimized WebP files served from the application itself, so the runtime does not depend on third-party image hotlinks. A shared image component provides consistent sizing, loading, and fallbacks wherever products appear. Original sources, licenses, download dates, and transformations are documented in [`docs/THIRD_PARTY_ASSETS.md`](docs/THIRD_PARTY_ASSETS.md).
 
 ## Screenshots
 
-These captures were taken from the final executable JAR during an isolated browser QA run. The admin screenshot includes the order created during that verification, so its totals intentionally differ from a fresh seed-data start.
+These captures were taken from the final executable JAR during an isolated browser QA run.
 
-### Product catalog — desktop
+### Product catalog — light theme, desktop
 
-![Product catalog on desktop](docs/screenshots/products-desktop.jpg)
+![Product catalog in the light theme on desktop](docs/screenshots/products-light-desktop.jpg)
 
-### Product catalog — mobile
+### Product catalog — dark theme, desktop
 
-![Product catalog on mobile](docs/screenshots/products-mobile.jpg)
+![Product catalog in the dark theme on desktop](docs/screenshots/products-dark-desktop.jpg)
 
-### Admin dashboard — desktop
+### Product catalog — dark theme, mobile
 
-![Admin dashboard on desktop](docs/screenshots/admin-dashboard.jpg)
+![Product catalog in the dark theme on mobile](docs/screenshots/products-dark-mobile.jpg)
+
+### Admin products — dark theme, desktop
+
+![Admin product management in the dark theme on desktop](docs/screenshots/admin-dark-desktop.jpg)
 
 Files under `docs/design-reference/` are early design concepts rather than captures of the running application.
 

@@ -14,6 +14,7 @@ import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
 import { Dialog } from '../components/ui/Dialog'
 import { Field } from '../components/ui/Field'
+import { ProductImage } from '../features/products/ProductImage'
 import { formatYen } from '../utils/currency'
 import styles from '../features/admin/admin.module.css'
 import pageStyles from './pages.module.css'
@@ -74,7 +75,7 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
     <Dialog open={open} title="Add product" description="Create a product using the same rules as the saved inventory." onClose={close}>
       <form onSubmit={submit} noValidate>
         <div className={pageStyles.formGrid}>
-          {submitError === null ? null : <p className={pageStyles.formMessage} style={{ gridColumn: '1 / -1' }} role="alert">{submitError}</p>}
+          {submitError === null ? null : <p className={`${pageStyles.formMessage} ${pageStyles.formMessageWide}`} role="alert">{submitError}</p>}
           <Field label="Product ID" placeholder="P005" error={form.formState.errors.id?.message} {...form.register('id')} />
           <Field label="Name" placeholder="Webcam" error={form.formState.errors.name?.message} {...form.register('name')} />
           <Field label="Price (JPY)" inputMode="numeric" placeholder="9800" error={form.formState.errors.priceYen?.message} {...form.register('priceYen')} />
@@ -186,7 +187,12 @@ export default function AdminProductsPage() {
                 return (
                   <tr key={product.id}>
                     <td className={styles.mono}>{product.id}</td>
-                    <td className={styles.nameCell}>{product.name}</td>
+                    <td className={styles.nameCell}>
+                      <div className={styles.productIdentity}>
+                        <ProductImage productId={product.id} productName={product.name} variant="admin" alt="" />
+                        <span>{product.name}</span>
+                      </div>
+                    </td>
                     <td>{formatYen(product.priceYen)}</td>
                     <td>{product.stock}</td>
                     <td>{product.weightKg} kg</td>
