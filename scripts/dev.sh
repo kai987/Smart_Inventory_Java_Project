@@ -8,6 +8,13 @@ set -m
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+readonly BACKEND="${SMART_INVENTORY_BACKEND:-java}"
+
+case "$BACKEND" in
+    java) BACKEND_DIRECTORY="backend" ;;
+    rust) BACKEND_DIRECTORY="backend-rust" ;;
+    *) printf 'SMART_INVENTORY_BACKEND must be java or rust.\n' >&2; exit 1 ;;
+esac
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -54,24 +61,40 @@ handle_interrupt() {
 trap cleanup EXIT
 trap handle_interrupt INT TERM
 
-for directory in backend frontend; do
+for directory in "$BACKEND_DIRECTORY" frontend; do
     if [[ ! -d "$REPO_ROOT/$directory" ]]; then
         printf 'Required directory is missing: %s\n' "$REPO_ROOT/$directory" >&2
         exit 1
     fi
 done
 
-if [[ ! -x "$REPO_ROOT/backend/mvnw" ]]; then
+if [[ "$BACKEND" == "java" && ! -x "$REPO_ROOT/backend/mvnw" ]]; then
     printf 'Maven Wrapper is not executable: %s\n' "$REPO_ROOT/backend/mvnw" >&2
     printf 'Run: chmod +x "%s"\n' "$REPO_ROOT/backend/mvnw" >&2
     exit 1
 fi
 
-printf 'Starting Spring Boot at http://localhost:8080 ...\n'
+if [[ "$BACKEND" == "rust" ]]; then
+    if ! command -v cargo >/dev/null 2>&1; then
+        printf 'Cargo is required for the Rust backend. Install Rust 1.93 or newer.\n' >&2
+        exit 1
+    fi
+    if [[ "${SMART_INVENTORY_PORT:-${PORT:-8080}}" != "8080" ]]; then
+        printf 'The development Vite proxy requires backend port 8080. Unset PORT/SMART_INVENTORY_PORT.\n' >&2
+        exit 1
+    fi
+fi
+
+printf 'Starting %s backend at http://localhost:8080 ...\n' "$BACKEND"
 (
-    cd -- "$REPO_ROOT/backend"
-    export SMART_INVENTORY_DATA_DIR="${SMART_INVENTORY_DATA_DIR:-$REPO_ROOT/runtime-data}"
-    exec ./mvnw spring-boot:run
+    cd -- "$REPO_ROOT/$BACKEND_DIRECTORY"
+    if [[ "$BACKEND" == "rust" ]]; then
+        export SMART_INVENTORY_DATA_DIR="${SMART_INVENTORY_DATA_DIR:-$REPO_ROOT/runtime-data-rust}"
+        exec cargo run --locked --bin smart-inventory-server
+    else
+        export SMART_INVENTORY_DATA_DIR="${SMART_INVENTORY_DATA_DIR:-$REPO_ROOT/runtime-data}"
+        exec ./mvnw spring-boot:run
+    fi
 ) &
 BACKEND_PID=$!
 

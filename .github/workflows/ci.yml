@@ -74,3 +74,54 @@ jobs:
 
       - name: Build Sites deployment
         run: npm --prefix site run build
+
+  rust-compatibility:
+    name: Rust backend and shared browser tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust 1.93
+        uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check Rust formatting
+        working-directory: backend-rust
+        run: cargo fmt --all -- --check
+
+      - name: Lint Rust
+        working-directory: backend-rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run Rust tests
+        working-directory: backend-rust
+        run: cargo test --locked
+
+      - name: Build Rust release
+        working-directory: backend-rust
+        run: cargo build --locked --release --bin smart-inventory-server
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Build shared frontend
+        run: npm --prefix frontend run build
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Test shared frontend against Rust API
+        env:
+          SMART_INVENTORY_BACKEND: rust
+        run: npm --prefix frontend run test:e2e

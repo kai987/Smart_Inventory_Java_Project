@@ -3,7 +3,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontendDirectory = dirname(fileURLToPath(import.meta.url))
-const e2eDataDirectory = resolve(frontendDirectory, '.playwright-data')
+const backend = process.env.SMART_INVENTORY_BACKEND ?? 'java'
+if (backend !== 'java' && backend !== 'rust') {
+  throw new Error('SMART_INVENTORY_BACKEND must be java or rust.')
+}
+const isRust = backend === 'rust'
+const e2eDataDirectory = resolve(frontendDirectory, isRust ? '.playwright-data-rust' : '.playwright-data')
 
 export default defineConfig({
   testDir: './e2e',
@@ -25,14 +30,21 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'node ../frontend/e2e/reset-data.mjs && ./mvnw spring-boot:run',
-      cwd: '../backend',
+      command: isRust
+        ? 'node ../frontend/e2e/reset-data.mjs && cargo run --locked --bin smart-inventory-server'
+        : 'node ../frontend/e2e/reset-data.mjs && ./mvnw spring-boot:run',
+      cwd: isRust ? '../backend-rust' : '../backend',
       env: {
+        SMART_INVENTORY_BACKEND: backend,
         SMART_INVENTORY_DATA_DIR: e2eDataDirectory,
         SMART_INVENTORY_ALLOWED_ORIGINS: 'http://localhost:5173',
+        SMART_INVENTORY_HOST: '127.0.0.1',
+        SMART_INVENTORY_PORT: '8080',
+        PORT: '8080',
+        SMART_INVENTORY_SECURE_COOKIE: 'false',
       },
-      url: 'http://localhost:8080/api/auth/csrf',
-      timeout: 120_000,
+      url: 'http://127.0.0.1:8080/api/auth/csrf',
+      timeout: isRust ? 300_000 : 120_000,
       reuseExistingServer: false,
     },
     {

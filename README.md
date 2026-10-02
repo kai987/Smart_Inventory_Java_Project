@@ -1,11 +1,13 @@
 # Smart Inventory
 
-Smart Inventory is a classroom and portfolio full-stack demo for managing products, stock, customer orders, and packing estimates. It combines a Spring Boot REST API with a React single-page application while preserving the business rules from the original Java object-oriented programming project.
+Smart Inventory is a classroom and portfolio full-stack demo for managing products, stock, customer orders, and packing estimates. It combines a React single-page application with a Spring Boot REST API or an optional Rust API, while preserving the business rules and source code from the original Java object-oriented programming project.
 
 The application runs in two modes:
 
 - **Development:** Vite on `http://localhost:5173` proxies `/api` requests to Spring Boot on `http://localhost:8080`.
 - **Production demo:** the React build is packaged inside one executable Spring Boot JAR and served from `http://localhost:8080`.
+
+These remain the default Java workflows. An additional [Rust backend](backend-rust/README.md) implements the same `/api` contract and CSV formats without changing the React screens. It has separate development, test, and native-package commands; choosing Rust does not replace or remove the Java coursework.
 
 ## From console project to full-stack application
 
@@ -49,6 +51,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 | --- | --- |
 | Backend | Java 21, Spring Boot 3.5.16, Spring MVC, Spring Security, Jakarta Bean Validation, Maven Wrapper |
 | Backend tests | JUnit 5, MockMvc, Spring Security Test |
+| Optional Rust backend | Rust 1.93+, Axum, Tokio, bcrypt, native Cargo tests |
 | Frontend | React 19, TypeScript strict mode, Vite, React Router, TanStack Query v5, i18next |
 | Forms and HTTP | React Hook Form, Zod, Axios |
 | UI | CSS Modules, Lucide React |
@@ -61,10 +64,12 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 ```text
 .
 ├── backend/                 Spring Boot API, domain, persistence, and tests
+├── backend-rust/            Optional API-compatible Rust backend and tests
 ├── frontend/                React/Vite SPA, unit tests, and Playwright tests
 ├── site/                    Sites/Vinext deployment with D1-backed API
 ├── legacy-console/          Original OOP course console application
 ├── runtime-data/            Local web-app CSV data; generated and ignored by Git
+├── runtime-data-rust/       Isolated local Rust CSV data; generated and ignored
 ├── scripts/                 Development, test, build, and data-reset commands
 ├── .github/workflows/       Continuous integration
 ├── docs/design-reference/   Design concepts, not runtime screenshots
@@ -80,6 +85,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 - Node.js 24 and npm
 - Bash on macOS or Linux
 - A Chromium-compatible Playwright browser for E2E tests
+- Rust 1.93 or newer with Cargo, rustfmt, and Clippy only when using the Rust backend; Java is not required for the Rust workflow
 
 The Maven Wrapper downloads the required Maven distribution automatically. A global Maven installation is not required.
 
@@ -121,6 +127,30 @@ Vite proxies only `/api` to Spring Boot. Frontend source code uses relative `/ap
 | Secure session cookie | `SMART_INVENTORY_SECURE_COOKIE` | `false` |
 
 `scripts/dev.sh` points `SMART_INVENTORY_DATA_DIR` at the repository-level `runtime-data/` directory unless the variable is already set. For credentialed CORS, configure explicit origins; `*` is not accepted.
+
+### Optional Rust backend
+
+From the repository root:
+
+```bash
+npm --prefix frontend ci
+./scripts/dev-rust.sh
+```
+
+Open [http://localhost:5173](http://localhost:5173). This starts the same frontend with Rust on port 8080. `Ctrl+C` stops both processes. Do not run the Java and Rust development servers at the same time: they use the same port. Rust uses `runtime-data-rust/` by default, leaving Java's `runtime-data/` unchanged.
+
+To validate and build a native demo package:
+
+```bash
+./scripts/test-rust.sh
+SMART_INVENTORY_BACKEND=rust npm --prefix frontend run test:e2e
+./scripts/build-rust-demo.sh
+./backend-rust/dist/run.sh
+```
+
+The build command also runs the non-browser checks. Install Chromium as shown in the E2E section before running the browser suite. The package includes a native executable and a `public/` directory, not a JAR. It runs without Java or Node.js on a compatible OS/CPU; distribute the whole package folder. See [Rust setup, configuration, and safe CSV migration](backend-rust/README.md) before reusing existing data.
+
+Switching backends requires signing in again because Rust uses its own `RUSTSESSIONID` cookie. Both backends use server-side sessions and CSRF protection. The independently deployed `site/` application remains TypeScript/Vinext with D1 and is not automatically changed by the Rust implementation.
 
 ## Production build
 
@@ -225,6 +255,8 @@ npm --prefix frontend run test:e2e
 
 The Playwright configuration starts the required application processes and uses isolated test data; it does not modify the developer's `runtime-data/` directory.
 
+Use the same suite against Rust with `SMART_INVENTORY_BACKEND=rust npm --prefix frontend run test:e2e`. Its data is isolated in `frontend/.playwright-data-rust/`; Java uses `frontend/.playwright-data/`. Both test servers require ports 8080 and 5173 to be free.
+
 ### Sites deployment checks
 
 The hosted version uses the same React screens and REST contract, with a Cloudflare Worker-compatible API and D1 database in place of the local Spring Boot process and CSV files:
@@ -280,6 +312,7 @@ Concurrent reads use a read lock. Registration, inventory changes, and order cre
 ## Password hashing and session security
 
 - New passwords are encoded through Spring Security's delegating password encoder and stored with an algorithm prefix such as `{bcrypt}`.
+- Bcrypt accepts at most 72 UTF-8 password bytes. The existing form's 100-character maximum does not override this encoding limit; the Rust backend rejects overlong passwords and fails closed on overlong legacy plaintext migration without silently truncating or overwriting the source data.
 - Compatible plaintext user rows from the original project are fully validated and atomically migrated to encoded values during startup; an invalid row stops startup without overwriting the file.
 - Passwords and hashes are never returned by an API DTO or written to application logs.
 - Authentication uses an `HttpOnly`, `SameSite=Lax` `JSESSIONID` cookie with a 30-minute session timeout rather than JWT.
@@ -295,6 +328,7 @@ Concurrent reads use a read lock. Registration, inventory changes, and order cre
 - Demo accounts use published passwords. The application has no password reset, email verification, multi-factor authentication, account lockout, or production-grade rate limiting.
 - User administration, product image upload, payment, shipping integration, and real warehouse bin tracking are outside this demo's scope. The included demo products instead use bundled, ID-mapped images.
 - Browser E2E tests target the configured local Chromium environment; broader browser and device coverage would be required for production release.
+- Rust prevents another Rust process from opening its CSV directory, but this advisory lock is not honored by the Java backend or external editors. Never point running Java and Rust processes at the same data directory. In-memory sessions do not transfer between backends or survive a server restart.
 
 ## Theme and product imagery
 

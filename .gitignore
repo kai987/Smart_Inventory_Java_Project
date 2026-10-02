@@ -1,6 +1,7 @@
 # Generated submission artifacts
 outputs/
 runtime-data/
+runtime-data-rust/
 Final_Project_Topic_Proposal_袁青凱_M25W0243.pdf
 
 # IDE and build output
@@ -9,10 +10,13 @@ out/
 *.class
 *.iml
 backend/target/
+backend-rust/target/
+backend-rust/dist/
 frontend/node_modules/
 frontend/dist/
 frontend/playwright-report/
 frontend/test-results/
+frontend/.playwright-data-rust/
 
 # macOS and Microsoft Office temporary files
 .DS_Store
