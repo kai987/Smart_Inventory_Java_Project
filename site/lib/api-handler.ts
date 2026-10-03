@@ -1,5 +1,6 @@
 import { compare, hash } from 'bcryptjs';
 import { ensureDatabase } from './database';
+import { keyedOrderId, sameOrderIntent } from './order-idempotency';
 import {
   ApiFault,
   destroySession,
@@ -156,7 +157,8 @@ async function authLogin(request: Request): Promise<Response> {
   const user = await database.prepare(
     'SELECT username, password_hash, role FROM users WHERE username = ?',
   ).bind(credentials.username).first<UserRecord>();
-  if (!user || !(await compare(credentials.password, user.password_hash))) {
+  if (new TextEncoder().encode(credentials.password).length > 72
+    || !user || !(await compare(credentials.password, user.password_hash))) {
     throw new ApiFault(401, 'AUTHENTICATION_FAILED', 'Invalid username or password.');
   }
   const authenticated = await rotateAuthenticatedSession(context, user.username);
@@ -176,8 +178,8 @@ async function authRegister(request: Request): Promise<Response> {
   const passwordHash = await hash(credentials.password, 10);
   await database.prepare('INSERT INTO users(username, password_hash, role) VALUES (?, ?, ?)')
     .bind(credentials.username, passwordHash, 'CUSTOMER').run();
-  const authenticated = await rotateAuthenticatedSession(context, credentials.username);
-  return sessionResponse(json({ username: credentials.username, role: 'CUSTOMER' }, 201), authenticated);
+  // Registration creates an account; explicit login establishes its session.
+  return sessionResponse(json({ username: credentials.username, role: 'CUSTOMER' }, 201), context);
 }
 
 async function authLogout(request: Request): Promise<Response> {
@@ -258,9 +260,10 @@ async function deleteProduct(request: Request, id: string): Promise<Response> {
   return sessionResponse(empty(), csrf);
 }
 
-async function persistOrder(customerName: string, requestedItems: RequestedItem[], order: CalculatedOrder): Promise<string> {
+async function persistOrder(customerName: string, requestedItems: RequestedItem[], order: CalculatedOrder,
+  keyedId: string | null): Promise<string> {
   const database = await ensureDatabase();
-  const orderId = `O${crypto.randomUUID().replaceAll('-', '')}`;
+  const orderId = keyedId ?? `O${crypto.randomUUID().replaceAll('-', '')}`;
   const guardId = crypto.randomUUID();
   const ids = requestedItems.map((item) => item.productId);
   const caseSql = requestedItems.map(() => 'WHEN ? THEN ?').join(' ');
@@ -304,11 +307,30 @@ async function createOrder(request: Request): Promise<Response> {
   const { user } = await requireUser(request, 'CUSTOMER');
   const normalized = normalizeRequestedItems(await readJson(request));
   if (normalized.errors.length > 0) throw new ApiFault(400, 'VALIDATION_ERROR', 'Validation failed.', normalized.errors);
+  let keyedId: string | null;
+  try {
+    keyedId = await keyedOrderId(user.username, request.headers.get('Idempotency-Key'));
+  } catch {
+    throw new ApiFault(400, 'VALIDATION_ERROR', 'Idempotency-Key must contain 16-128 letters, digits, underscores or hyphens.');
+  }
+  const replay = async () => {
+    if (keyedId === null) return null;
+    const saved = (await ordersResponse('WHERE order_id = ? AND customer_name = ?', [keyedId, user.username])).items[0];
+    if (saved === undefined) return null;
+    if (!sameOrderIntent(saved.items, normalized.items)) {
+      throw new ApiFault(409, 'IDEMPOTENCY_CONFLICT', 'This checkout key was already used for a different order.');
+    }
+    return saved;
+  };
+  const previous = await replay();
+  if (previous !== null) return sessionResponse(json(previous, 201), csrf);
   const products = await productsForOrder(normalized.items);
   let calculated: CalculatedOrder;
   try {
     calculated = calculateOrder(products, normalized.items);
   } catch (error: unknown) {
+    const concurrent = await replay();
+    if (concurrent !== null) return sessionResponse(json(concurrent, 201), csrf);
     const message = error instanceof Error ? error.message : '';
     const [code, productId] = message.split(':');
     if (code === 'PRODUCT_NOT_FOUND') throw new ApiFault(404, code, `Product ${productId} was not found.`);
@@ -322,8 +344,12 @@ async function createOrder(request: Request): Promise<Response> {
   }
   let orderId: string;
   try {
-    orderId = await persistOrder(user.username, normalized.items, calculated);
+    orderId = await persistOrder(user.username, normalized.items, calculated, keyedId);
   } catch {
+    // Another request with this key may have committed between lookup and INSERT.
+    // D1 batch is transactional, so its duplicate primary key rolls back all writes.
+    const concurrent = await replay();
+    if (concurrent !== null) return sessionResponse(json(concurrent, 201), csrf);
     const currentProducts = await productsForOrder(normalized.items);
     try {
       calculateOrder(currentProducts, normalized.items);

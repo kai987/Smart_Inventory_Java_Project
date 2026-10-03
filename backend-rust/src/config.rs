@@ -11,6 +11,7 @@ pub struct Config {
     pub secure_cookie: bool,
     pub session_timeout: Duration,
     pub low_stock_threshold: i32,
+    pub password_work_limit: usize,
 }
 
 impl Default for Config {
@@ -28,6 +29,7 @@ impl Default for Config {
             secure_cookie: false,
             session_timeout: Duration::from_secs(1800),
             low_stock_threshold: 5,
+            password_work_limit: 4,
         }
     }
 }
@@ -94,6 +96,14 @@ impl Config {
                 return Err("SMART_INVENTORY_LOW_STOCK_THRESHOLD must not be negative".into());
             }
         }
+        if let Some(value) = get("SMART_INVENTORY_PASSWORD_WORK_LIMIT") {
+            config.password_work_limit = value.parse().map_err(|_| {
+                "SMART_INVENTORY_PASSWORD_WORK_LIMIT must be between 1 and 64".to_owned()
+            })?;
+            if !(1..=64).contains(&config.password_work_limit) {
+                return Err("SMART_INVENTORY_PASSWORD_WORK_LIMIT must be between 1 and 64".into());
+            }
+        }
         Ok(config)
     }
 }
@@ -144,6 +154,7 @@ mod tests {
         assert_eq!(config.port, 8080);
         assert_eq!(config.session_timeout, Duration::from_secs(1800));
         assert!(!config.secure_cookie);
+        assert_eq!(config.password_work_limit, 4);
     }
 
     #[test]
@@ -161,6 +172,7 @@ mod tests {
             ("SMART_INVENTORY_SECURE_COOKIE", "true"),
             ("SMART_INVENTORY_SESSION_TIMEOUT_SECONDS", "60"),
             ("SMART_INVENTORY_LOW_STOCK_THRESHOLD", "0"),
+            ("SMART_INVENTORY_PASSWORD_WORK_LIMIT", "2"),
         ])
         .unwrap();
         assert_eq!(config.data_dir, PathBuf::from("./custom-data"));
@@ -171,6 +183,7 @@ mod tests {
         assert!(config.secure_cookie);
         assert_eq!(config.session_timeout, Duration::from_secs(60));
         assert_eq!(config.low_stock_threshold, 0);
+        assert_eq!(config.password_work_limit, 2);
         assert_eq!(self::config(&[("PORT", "8083")]).unwrap().port, 8083);
     }
 
@@ -201,6 +214,8 @@ mod tests {
                 "18446744073709551615",
             ),
             ("SMART_INVENTORY_LOW_STOCK_THRESHOLD", "-1"),
+            ("SMART_INVENTORY_PASSWORD_WORK_LIMIT", "0"),
+            ("SMART_INVENTORY_PASSWORD_WORK_LIMIT", "65"),
         ] {
             assert!(config(&[pair]).is_err(), "{pair:?}");
         }

@@ -43,6 +43,11 @@ public final class OrderManager {
     }
 
     public Order createOrderOrThrow(String customerName, List<RequestedItem> requestedItems) {
+        return createOrderOrThrow(customerName, requestedItems,
+                "O" + UUID.randomUUID().toString().replace("-", ""));
+    }
+
+    public Order createOrderOrThrow(String customerName, List<RequestedItem> requestedItems, String orderId) {
         if (!User.isValidUsername(customerName)) {
             throw new DomainException(ErrorCode.VALIDATION_ERROR);
         }
@@ -84,8 +89,7 @@ public final class OrderManager {
         try {
             quantities.forEach((id, quantity) -> snapshots.add(
                     new OrderItem(inventoryManager.findMutableProductById(id), quantity)));
-            Order order = new Order("O" + UUID.randomUUID().toString().replace("-", ""),
-                    customerName, snapshots);
+            Order order = new Order(orderId, customerName, snapshots);
             quantities.forEach((id, quantity) -> inventoryManager.findMutableProductById(id)
                     .reduceStock(quantity));
             orders.add(order);

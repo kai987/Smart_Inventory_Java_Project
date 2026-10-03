@@ -1,10 +1,10 @@
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../api/adminApi'
 import { ApiError } from '../api/apiError'
 import { productApi } from '../api/productApi'
-import { renderWithProviders } from '../test/render'
+import { authValue, renderWithProviders } from '../test/render'
 import AdminProductsPage from './AdminProductsPage'
 
 const laptop = { id: 'P001', name: 'Laptop', priceYen: '120000', stock: 8, weightKg: 3, available: true }
@@ -22,6 +22,22 @@ async function openAndFillProduct(values: { id: string; price: string }) {
 }
 
 describe('AdminProductsPage', () => {
+  it('ignores delayed product creation after the admin session changes', async () => {
+    vi.spyOn(adminApi, 'summary').mockResolvedValue({ productCount: 0, totalStock: 0, orderCount: 0, customerCount: 0, lowStockCount: 0, lowStockThreshold: 5, inventoryValueYen: '0' })
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [], total: 0 })
+    let resolveCreation: (value: typeof laptop) => void = () => { throw new Error('Missing resolver') }
+    const pending = new Promise<typeof laptop>((resolve) => { resolveCreation = resolve })
+    vi.spyOn(productApi, 'create').mockReturnValue(pending)
+    const isCurrentSession = vi.fn().mockReturnValue(true)
+    renderWithProviders(<AdminProductsPage />, { auth: authValue({ username: 'admin', role: 'ADMIN' }, { isCurrentSession }) })
+    await screen.findByText('No products found')
+    await openAndFillProduct({ id: 'P005', price: '9800' })
+    isCurrentSession.mockReturnValue(false)
+    await act(async () => { resolveCreation(laptop); await pending })
+    expect(screen.queryByText('Product added.')).not.toBeInTheDocument()
+    expect(productApi.list).toHaveBeenCalledTimes(1)
+    expect(adminApi.summary).toHaveBeenCalledTimes(1)
+  })
   it('renders the mapped local product thumbnail in the table', async () => {
     vi.spyOn(adminApi, 'summary').mockResolvedValue({ productCount: 1, totalStock: 8, orderCount: 0, customerCount: 0, lowStockCount: 0, lowStockThreshold: 5, inventoryValueYen: '960000' })
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })

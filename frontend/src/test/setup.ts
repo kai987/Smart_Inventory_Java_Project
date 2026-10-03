@@ -5,6 +5,7 @@ import appI18n from '../i18n/i18n'
 
 beforeEach(() => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
   void appI18n.changeLanguage('en')
   document.documentElement.lang = 'en'
   document.documentElement.dir = 'ltr'
@@ -23,5 +24,6 @@ afterEach(() => {
   cleanup()
   void appI18n.changeLanguage('en')
   window.localStorage.clear()
+  window.sessionStorage.clear()
   vi.restoreAllMocks()
 })

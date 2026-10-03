@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import com.kai987.smartinventory.domain.InventoryManager;
 import com.kai987.smartinventory.domain.Order;
 import com.kai987.smartinventory.domain.OrderManager;
+import com.kai987.smartinventory.domain.OrderIdempotency;
 import com.kai987.smartinventory.domain.Product;
 import com.kai987.smartinventory.domain.Role;
 import com.kai987.smartinventory.domain.User;
@@ -167,10 +168,28 @@ public class SmartInventoryService {
     }
 
     public Order createOrder(String customerName, List<OrderManager.RequestedItem> requestedItems) {
+        return createOrder(customerName, requestedItems, null);
+    }
+
+    public Order createOrder(String customerName, List<OrderManager.RequestedItem> requestedItems,
+            String idempotencyKey) {
+        String keyedId = OrderIdempotency.orderId(customerName, idempotencyKey);
         stateLock.writeLock().lock();
         try {
+            if (keyedId != null) {
+                var quantities = OrderIdempotency.quantities(requestedItems);
+                var existing = orders.getOrders().stream()
+                        .filter(order -> order.getOrderId().equals(keyedId)).findFirst();
+                if (existing.isPresent()) {
+                    if (!OrderIdempotency.matches(existing.get(), customerName, quantities)) {
+                        throw new DomainException(ErrorCode.IDEMPOTENCY_CONFLICT);
+                    }
+                    return existing.get();
+                }
+            }
             Map<String, Integer> previousStocks = inventory.snapshotStocks();
-            Order order = orders.createOrderOrThrow(customerName, requestedItems);
+            Order order = keyedId == null ? orders.createOrderOrThrow(customerName, requestedItems)
+                    : orders.createOrderOrThrow(customerName, requestedItems, keyedId);
             try {
                 files.saveProductsAndOrders(inventory.getProducts(), orders.getOrders());
             } catch (PersistenceException exception) {

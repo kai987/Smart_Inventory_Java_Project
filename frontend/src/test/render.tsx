@@ -17,10 +17,15 @@ export function authValue(user: User | null = null, overrides: Partial<AuthConte
   return {
     user,
     isLoading: false,
+    isChangingSession: false,
     error: null,
     login: () => Promise.resolve(user ?? { username: 'customer', role: 'CUSTOMER' }),
     logout: noOp,
     refresh: noOp,
+    getSessionVersion: () => 0,
+    getSessionSignal: () => new AbortController().signal,
+    runProtectedRequest: (operation) => operation(new AbortController().signal),
+    isCurrentSession: () => true,
     ...overrides,
   }
 }

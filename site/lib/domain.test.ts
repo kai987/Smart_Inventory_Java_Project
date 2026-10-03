@@ -32,4 +32,15 @@ describe('Sites domain rules', () => {
     expect(productErrors({ id: 'BAD', name: 'Bad,Name', priceYen: '1.5', stock: null, weightKg: 0 }).map((error) => error.field))
       .toEqual(['id', 'name', 'priceYen', 'stock', 'weightKg']);
   });
+
+  it('matches the bcrypt 72-byte limit for ASCII and multibyte passwords', () => {
+    for (const password of ['a'.repeat(72), '中'.repeat(24)]) {
+      expect(registrationErrors({ username: 'customer', password })).toEqual([]);
+    }
+    for (const password of ['a'.repeat(73), '中'.repeat(25)]) {
+      expect(registrationErrors({ username: 'customer', password })).toEqual([
+        { field: 'password', message: 'Password must not exceed 72 UTF-8 bytes.' },
+      ]);
+    }
+  });
 });

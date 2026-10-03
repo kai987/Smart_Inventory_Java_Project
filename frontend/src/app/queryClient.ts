@@ -4,10 +4,12 @@ export const queryKeys = {
   auth: ['auth', 'me'] as const,
   productsRoot: ['products'] as const,
   products: (filters: { q: string; inStockOnly: boolean }) => ['products', filters] as const,
-  myOrders: ['orders', 'me'] as const,
+  myOrdersRoot: ['orders', 'me'] as const,
+  myOrders: (username: string, role: 'ADMIN' | 'CUSTOMER') => ['orders', 'me', username, role] as const,
   adminOrdersRoot: ['orders', 'admin'] as const,
-  adminOrders: (customer: string) => ['orders', 'admin', { customer }] as const,
-  adminSummary: ['admin', 'summary'] as const,
+  adminOrders: (username: string, customer: string) => ['orders', 'admin', username, 'ADMIN', { customer }] as const,
+  adminSummaryRoot: ['admin', 'summary'] as const,
+  adminSummary: (username: string) => ['admin', 'summary', username, 'ADMIN'] as const,
 }
 
 export const queryClient = new QueryClient({

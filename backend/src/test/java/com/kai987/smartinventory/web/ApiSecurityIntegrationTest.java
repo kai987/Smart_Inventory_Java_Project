@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -300,6 +301,125 @@ class ApiSecurityIntegrationTest {
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 
+    @Test
+    @Order(13)
+    void keyedOrderReplayReturnsOriginalOrderWithoutDeductingStockAgain() throws Exception {
+        MockHttpSession session = login("customer", "user123");
+        SessionCsrf csrf = csrf(session);
+        int beforeStock = productStock("P002");
+        int beforeOrders = customerOrderCount(session);
+        String key = "http_replay_1234567890";
+
+        MvcResult created = mockMvc.perform(post("/api/orders").session(session)
+                        .header(csrf.header(), csrf.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":2}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.customerName").value("customer"))
+                .andReturn();
+        JsonNode original = objectMapper.readTree(created.getResponse().getContentAsString());
+
+        MvcResult replayed = mockMvc.perform(post("/api/orders").session(session)
+                        .header(csrf.header(), csrf.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":1},{\"productId\":\"P002\",\"quantity\":1}]}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        assertEquals(original, objectMapper.readTree(replayed.getResponse().getContentAsString()));
+        assertEquals(beforeStock - 2, productStock("P002"));
+        assertEquals(beforeOrders + 1, customerOrderCount(session));
+    }
+
+    @Test
+    @Order(14)
+    void keyedOrderChangedIntentReturnsConflictAndPreservesOriginalOrder() throws Exception {
+        MockHttpSession session = login("customer", "user123");
+        SessionCsrf csrf = csrf(session);
+        int beforeStock = productStock("P002");
+        int beforeOrders = customerOrderCount(session);
+        String key = "http_conflict_1234567890";
+
+        mockMvc.perform(post("/api/orders").session(session)
+                        .header(csrf.header(), csrf.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":1}]}"))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/orders").session(session)
+                        .header(csrf.header(), csrf.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":2}]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+
+        assertEquals(beforeStock - 1, productStock("P002"));
+        assertEquals(beforeOrders + 1, customerOrderCount(session));
+    }
+
+    @Test
+    @Order(15)
+    void malformedIdempotencyKeysReturnValidationErrorWithoutCreatingOrders() throws Exception {
+        MockHttpSession session = login("customer", "user123");
+        SessionCsrf csrf = csrf(session);
+        int beforeStock = productStock("P002");
+        int beforeOrders = customerOrderCount(session);
+
+        for (String key : new String[]{"short", "checkout/1234567890", "a".repeat(129)}) {
+            mockMvc.perform(post("/api/orders").session(session)
+                            .header(csrf.header(), csrf.token())
+                            .header("Idempotency-Key", key)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":1}]}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+
+        assertEquals(beforeStock, productStock("P002"));
+        assertEquals(beforeOrders, customerOrderCount(session));
+    }
+
+    @Test
+    @Order(16)
+    void loginAccepts72BytePasswordButNeverMatchesIts73BytePrefix() throws Exception {
+        assertPasswordByteLimitAtLogin("password_ascii", "a".repeat(72), "a".repeat(73));
+    }
+
+    @Test
+    @Order(17)
+    void loginUsesUtf8BytesForMultibytePasswordLimit() throws Exception {
+        assertPasswordByteLimitAtLogin("password_utf8", "中".repeat(24), "中".repeat(25));
+    }
+
+    private void assertPasswordByteLimitAtLogin(String username, String validPassword,
+            String tooLongPassword) throws Exception {
+        SessionCsrf registrationCsrf = csrf(null);
+        mockMvc.perform(post("/api/auth/register").session(registrationCsrf.session())
+                        .header(registrationCsrf.header(), registrationCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginBody(username, validPassword))))
+                .andExpect(status().isCreated());
+
+        MockHttpSession successfulSession = login(username, validPassword);
+        mockMvc.perform(get("/api/auth/me").session(successfulSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value(username));
+
+        SessionCsrf rejectedCsrf = csrf(null);
+        mockMvc.perform(post("/api/auth/login").session(rejectedCsrf.session())
+                        .header(rejectedCsrf.header(), rejectedCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginBody(username, tooLongPassword))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+        mockMvc.perform(get("/api/auth/me").session(rejectedCsrf.session()))
+                .andExpect(status().isUnauthorized());
+    }
+
     private MockHttpSession login(String username, String password) throws Exception {
         SessionCsrf csrf = csrf(null);
         MvcResult result = mockMvc.perform(post("/api/auth/login").session(csrf.session())
@@ -326,6 +446,12 @@ class ApiSecurityIntegrationTest {
         MvcResult result = mockMvc.perform(get("/api/products/" + id))
                 .andExpect(status().isOk()).andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("stock").asInt();
+    }
+
+    private int customerOrderCount(MockHttpSession session) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/orders/me").session(session))
+                .andExpect(status().isOk()).andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("total").asInt();
     }
 
     private record SessionCsrf(MockHttpSession session, String header, String token) { }

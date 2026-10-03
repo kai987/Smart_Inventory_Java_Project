@@ -29,7 +29,7 @@ export function LoginPage() {
   const resolvedLanguage = i18n.resolvedLanguage
   const [showPassword, setShowPassword] = useState(false)
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
-  const { login } = useAuth()
+  const { login, isChangingSession } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const schema = useMemo(() => {
@@ -83,7 +83,7 @@ export function LoginPage() {
             }
             {...register('password')}
           />
-          <Button type="submit" disabled={isSubmitting}>{isSubmitting ? t('auth.signingIn') : t('auth.signIn')}</Button>
+          <Button type="submit" disabled={isSubmitting || isChangingSession}>{isSubmitting ? t('auth.signingIn') : t('auth.signIn')}</Button>
         </form>
         <p className={styles.authFooter}>{t('auth.newToApp')} <Link to="/register">{t('auth.createAccount')}</Link></p>
       </section>

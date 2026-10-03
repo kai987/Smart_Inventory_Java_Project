@@ -11,6 +11,7 @@ import { toApiError } from '../api/apiError'
 import { productApi } from '../api/productApi'
 import type { CreateProductRequest, Product } from '../api/types'
 import { queryKeys } from '../app/queryClient'
+import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
@@ -63,6 +64,7 @@ function isProductField(value: string): value is ProductField {
 
 function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const { t, i18n } = useTranslation()
+  const { user, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const resolvedLanguage = i18n.resolvedLanguage
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
   const schema = useMemo(() => {
@@ -74,7 +76,7 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
     defaultValues: { id: '', name: '', priceYen: '', stock: '0', weightKg: '' },
   })
   const { clearErrors } = form
-  const mutation = useMutation({ mutationFn: productApi.create })
+  const mutation = useMutation({ mutationFn: (request: CreateProductRequest) => runProtectedRequest(() => productApi.create(request, getSessionSignal())) })
 
   useEffect(() => {
     clearErrors()
@@ -88,6 +90,8 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
   }
 
   const submit = form.handleSubmit(async (values) => {
+    if (user?.role !== 'ADMIN') return
+    const sessionVersion = getSessionVersion()
     setSubmitError(null)
     const request: CreateProductRequest = {
       id: values.id,
@@ -98,10 +102,12 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
     }
     try {
       await mutation.mutateAsync(request)
+      if (!isCurrentSession(user, sessionVersion)) return
       form.reset()
       onCreated()
       onClose()
     } catch (error: unknown) {
+      if (!isCurrentSession(user, sessionVersion)) return
       const apiError = toApiError(error)
       for (const fieldError of apiError.fieldErrors) {
         const field = fieldError.field.replace(/^request\./, '')
@@ -135,6 +141,7 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
 
 function StockDialog({ product, onClose, onUpdated }: { product: Product | null; onClose: () => void; onUpdated: () => void }) {
   const { t, i18n } = useTranslation()
+  const { user, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const resolvedLanguage = i18n.resolvedLanguage
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
   const schema = useMemo(() => {
@@ -143,20 +150,23 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
   }, [resolvedLanguage, t])
   const form = useForm<StockValues>({ resolver: zodResolver(schema), values: { stock: String(product?.stock ?? 0) } })
   const { clearErrors } = form
-  const mutation = useMutation({ mutationFn: ({ id, stock }: { id: string; stock: number }) => productApi.updateStock(id, stock) })
+  const mutation = useMutation({ mutationFn: ({ id, stock }: { id: string; stock: number }) => runProtectedRequest(() => productApi.updateStock(id, stock, getSessionSignal())) })
 
   useEffect(() => {
     clearErrors()
   }, [clearErrors, resolvedLanguage])
 
   const submit = form.handleSubmit(async ({ stock }) => {
-    if (product === null) return
+    if (product === null || user?.role !== 'ADMIN') return
+    const sessionVersion = getSessionVersion()
     setSubmitError(null)
     try {
       await mutation.mutateAsync({ id: product.id, stock: Number(stock) })
+      if (!isCurrentSession(user, sessionVersion)) return
       onUpdated()
       onClose()
     } catch (error: unknown) {
+      if (!isCurrentSession(user, sessionVersion)) return
       const apiError = toApiError(error)
       for (const fieldError of apiError.fieldErrors) {
         if (fieldError.field.replace(/^request\./, '') === 'stock') {
@@ -190,6 +200,7 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
 
 export default function AdminProductsPage() {
   const { t } = useTranslation()
+  const { user, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const { formatNumber, formatWeight, formatYen } = useLocaleFormatters()
   const [search, setSearch] = useState('')
   const [addOpen, setAddOpen] = useState(false)
@@ -204,25 +215,40 @@ export default function AdminProductsPage() {
     queryFn: ({ signal }) => productApi.list({ q: deferredSearch, inStockOnly: false }, signal),
     placeholderData: (previous) => previous,
   })
-  const summary = useQuery({ queryKey: queryKeys.adminSummary, queryFn: adminApi.summary })
+  const summary = useQuery({
+    queryKey: queryKeys.adminSummary(user?.username ?? ''),
+    queryFn: ({ signal }) => runProtectedRequest((scope) => adminApi.summary(AbortSignal.any([signal, scope]))),
+    enabled: user?.role === 'ADMIN' && !isChangingSession,
+  })
   const deleteMutation = useMutation({
-    mutationFn: productApi.remove,
-    onSuccess: async () => {
+    mutationFn: (id: string) => runProtectedRequest(() => productApi.remove(id, getSessionSignal())),
+    onMutate: () => ({ user, sessionVersion: getSessionVersion() }),
+    onSuccess: async (_result, _id, context) => {
+      if (context.user === null || !isCurrentSession(context.user, context.sessionVersion)) return
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.productsRoot }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary(context.user.username) }),
       ])
+      if (!isCurrentSession(context.user, context.sessionVersion)) return
       showToast(t('admin.productDeleted'), 'success')
       setDeleteProduct(null)
     },
-    onError: (error) => showToast(translateApiError(toApiError(error), t), 'error'),
+    onError: (error, _id, context) => {
+      if (context?.user !== null && context?.user !== undefined && isCurrentSession(context.user, context.sessionVersion)) {
+        showToast(translateApiError(toApiError(error), t), 'error')
+      }
+    },
   })
 
   const refreshProducts = async (message: string) => {
+    if (user?.role !== 'ADMIN') return
+    const sessionVersion = getSessionVersion()
+    if (!isCurrentSession(user, sessionVersion)) return
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.productsRoot }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary(user.username) }),
     ])
+    if (!isCurrentSession(user, sessionVersion)) return
     showToast(message, 'success')
   }
 

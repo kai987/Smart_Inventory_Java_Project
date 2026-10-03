@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -8,6 +8,7 @@ use std::{
 use fs2::FileExt;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 
@@ -145,6 +146,15 @@ impl Store {
     }
 
     pub fn register(&mut self, username: &str, raw_password: &str) -> Result<User, DomainError> {
+        Self::validate_registration(username, raw_password)?;
+        self.check_username_available(username)?;
+        self.register_hashed(username, encode_password(raw_password)?)
+    }
+
+    pub(crate) fn validate_registration(
+        username: &str,
+        raw_password: &str,
+    ) -> Result<(), DomainError> {
         if !valid_username(username) {
             return Err(validation(
                 "username",
@@ -157,12 +167,28 @@ impl Store {
                 "Use 4-100 characters and at most 72 UTF-8 bytes, without reserved delimiters.",
             ));
         }
+        Ok(())
+    }
+
+    pub(crate) fn check_username_available(&self, username: &str) -> Result<(), DomainError> {
         if self.find_user(username).is_some() {
-            return Err(DomainError::new(Code::UsernameExists));
+            Err(DomainError::new(Code::UsernameExists))
+        } else {
+            Ok(())
         }
+    }
+
+    // The HTTP layer hashes outside the shared store mutex, then rechecks the
+    // username here so two concurrent registrations cannot both persist it.
+    pub(crate) fn register_hashed(
+        &mut self,
+        username: &str,
+        password_hash: String,
+    ) -> Result<User, DomainError> {
+        self.check_username_available(username)?;
         let user = User {
             username: username.to_owned(),
-            password_hash: encode_password(raw_password)?,
+            password_hash,
             role: Role::Customer,
         };
         let mut replacement = self.users.clone();
@@ -266,12 +292,24 @@ impl Store {
         customer: &str,
         items: Vec<RequestedItem>,
     ) -> Result<Order, DomainError> {
+        self.create_order_with_key(customer, items, None)
+    }
+
+    pub fn create_order_with_key(
+        &mut self,
+        customer: &str,
+        items: Vec<RequestedItem>,
+        idempotency_key: Option<&str>,
+    ) -> Result<Order, DomainError> {
         if !valid_username(customer) {
             return Err(DomainError::new(Code::ValidationError));
         }
         if items.is_empty() {
             return Err(DomainError::new(Code::EmptyOrder));
         }
+        let order_id = idempotency_key
+            .map(|key| keyed_order_id(customer, key))
+            .transpose()?;
         // Preserve the first occurrence order and field index when merging duplicates.
         let mut merged: Vec<(String, i32, usize)> = Vec::new();
         for (index, item) in items.into_iter().enumerate() {
@@ -287,7 +325,6 @@ impl Store {
                     "Quantity must be positive.",
                 ));
             }
-            self.get_product(&item.product_id)?;
             if let Some((_, quantity, _)) =
                 merged.iter_mut().find(|(id, _, _)| id == &item.product_id)
             {
@@ -300,6 +337,24 @@ impl Store {
             } else {
                 merged.push((item.product_id, item.quantity, index));
             }
+        }
+        // Replay checks intent before consulting current products or stock: an
+        // already committed order remains retryable after a product is deleted.
+        if let Some(order_id) = &order_id
+            && let Some(order) = self.orders.iter().find(|order| &order.order_id == order_id)
+        {
+            let requested: BTreeMap<_, _> = merged
+                .iter()
+                .map(|(id, quantity, _)| (id.as_str(), i64::from(*quantity)))
+                .collect();
+            let mut saved = BTreeMap::new();
+            for item in &order.items {
+                *saved.entry(item.product_id.as_str()).or_insert(0_i64) += i64::from(item.quantity);
+            }
+            if order.customer_name.eq_ignore_ascii_case(customer) && requested == saved {
+                return Ok(order.clone());
+            }
+            return Err(DomainError::new(Code::IdempotencyConflict));
         }
         let mut order_items = Vec::new();
         for (id, quantity, index) in &merged {
@@ -315,7 +370,7 @@ impl Store {
             order_items.push(OrderItem::new(&product, *quantity)?);
         }
         let order = Order::new(
-            format!("O{}", Uuid::new_v4().simple()),
+            order_id.unwrap_or_else(|| format!("O{}", Uuid::new_v4().simple())),
             customer.to_owned(),
             order_items,
         )?;
@@ -453,6 +508,24 @@ impl Store {
         let _ = remove_journal(&self.directory);
         Ok(())
     }
+}
+
+fn keyed_order_id(customer: &str, key: &str) -> Result<String, DomainError> {
+    if !(16..=128).contains(&key.len())
+        || !key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err(validation(
+            "idempotencyKey",
+            "Use 16-128 letters, numbers, underscores, or hyphens.",
+        ));
+    }
+    let mut digest = Sha256::new();
+    digest.update(customer.to_ascii_lowercase().as_bytes());
+    digest.update([0]);
+    digest.update(key.as_bytes());
+    Ok(format!("OI{:x}", digest.finalize()))
 }
 
 fn parse_users(source: &str) -> Result<(Vec<User>, PasswordMigrations), DomainError> {
@@ -873,6 +946,201 @@ mod tests {
         assert_eq!(error.field_errors[0].field, "items[0].quantity");
         assert_eq!(store.get_product("P001").unwrap().stock, 3);
         assert_eq!(store.orders.len(), 1);
+    }
+
+    #[test]
+    fn keyed_replay_normalizes_items_and_survives_stock_changes_deletion_and_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(
+            temp.path(),
+            "P001,Laptop,1000,10,1.5\nP002,Mouse,500,5,0.2\n",
+            "",
+        );
+        let mut store = Store::open(temp.path()).unwrap();
+        let key = "retry-key-12345678";
+        let order = store
+            .create_order_with_key(
+                "alice",
+                vec![request("P001", 2), request("P002", 1), request("P001", 1)],
+                Some(key),
+            )
+            .unwrap();
+        assert_eq!(order.order_id.len(), 66);
+        assert_eq!(store.get_product("P001").unwrap().stock, 7);
+        store.update_stock("P001", 0).unwrap();
+        let before = fs::read(temp.path().join("orders.csv")).unwrap();
+        assert_eq!(
+            store
+                .create_order_with_key(
+                    "ALICE",
+                    vec![request("P002", 1), request("P001", 3)],
+                    Some(key)
+                )
+                .unwrap(),
+            order
+        );
+        assert_eq!(fs::read(temp.path().join("orders.csv")).unwrap(), before);
+        store.delete_product("P001").unwrap();
+        drop(store);
+        let mut store = Store::open(temp.path()).unwrap();
+        assert_eq!(
+            store
+                .create_order_with_key(
+                    "Alice",
+                    vec![request("P001", 3), request("P002", 1)],
+                    Some(key)
+                )
+                .unwrap(),
+            order
+        );
+        assert_eq!(store.orders.len(), 1);
+        assert_eq!(store.get_product("P002").unwrap().stock, 4);
+        assert_eq!(
+            store
+                .create_order_with_key("alice", vec![request("P001", 4)], Some(key))
+                .unwrap_err()
+                .code,
+            Code::IdempotencyConflict
+        );
+        assert_eq!(
+            store
+                .create_order_with_key("alice", vec![request("P001", 0)], Some(key))
+                .unwrap_err()
+                .code,
+            Code::ValidationError
+        );
+        // An existing key must not bypass validation of a later duplicate item.
+        for invalid_items in [
+            vec![request("P001", 3), request("P001", 0)],
+            vec![request("P001", i32::MAX), request("P001", 1)],
+        ] {
+            let error = store
+                .create_order_with_key("alice", invalid_items, Some(key))
+                .unwrap_err();
+            assert_eq!(error.code, Code::ValidationError);
+            assert_eq!(error.field_errors[0].field, "items[1].quantity");
+        }
+        assert_eq!(store.orders.len(), 1);
+        assert_eq!(store.get_product("P002").unwrap().stock, 4);
+    }
+
+    #[test]
+    fn keyed_order_id_matches_the_cross_backend_protocol_vector() {
+        for customer in ["customer", "Customer"] {
+            assert_eq!(
+                keyed_order_id(customer, "checkout_1234567890").unwrap(),
+                "OI9582a2e4820a8f4d099338f727ce30d03d14583aace592e11346b43066c6e43d",
+            );
+        }
+    }
+
+    #[test]
+    fn keyed_requests_are_customer_scoped_case_sensitive_and_invalid_intents_do_not_consume_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,10,1\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        let key = "retry-key-12345678";
+        assert_eq!(
+            store
+                .create_order_with_key("alice", vec![request("P001", 11)], Some(key))
+                .unwrap_err()
+                .code,
+            Code::InsufficientStock
+        );
+        for invalid in ["short", "has invalid spaces", "1234567890abcdef:"] {
+            assert_eq!(
+                store
+                    .create_order_with_key("alice", vec![request("P001", 1)], Some(invalid))
+                    .unwrap_err()
+                    .code,
+                Code::ValidationError
+            );
+        }
+        assert_eq!(
+            store
+                .create_order_with_key(
+                    "alice",
+                    vec![request("P001", i32::MAX), request("P001", 1)],
+                    Some(key)
+                )
+                .unwrap_err()
+                .code,
+            Code::ValidationError
+        );
+        assert!(store.orders.is_empty());
+        assert_eq!(store.get_product("P001").unwrap().stock, 10);
+        let alice = store
+            .create_order_with_key("alice", vec![request("P001", 1)], Some(key))
+            .unwrap();
+        let bobby = store
+            .create_order_with_key("bobby", vec![request("P001", 1)], Some(key))
+            .unwrap();
+        let upper_key = store
+            .create_order_with_key(
+                "alice",
+                vec![request("P001", 1)],
+                Some("RETRY-KEY-12345678"),
+            )
+            .unwrap();
+        assert_ne!(alice.order_id, bobby.order_id);
+        assert_ne!(alice.order_id, upper_key.order_id);
+        assert_eq!(store.orders.len(), 3);
+        assert_eq!(store.get_product("P001").unwrap().stock, 7);
+    }
+
+    #[test]
+    fn keyed_transaction_failure_rolls_back_and_retry_can_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,5,1\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        store.fail_after_writes = Some(1);
+        let key = "rollback-key-1234";
+        assert_eq!(
+            store
+                .create_order_with_key("alice", vec![request("P001", 2)], Some(key))
+                .unwrap_err()
+                .code,
+            Code::PersistenceError
+        );
+        assert!(store.orders.is_empty());
+        assert_eq!(store.get_product("P001").unwrap().stock, 5);
+        assert_eq!(
+            fs::read_to_string(temp.path().join("orders.csv")).unwrap(),
+            ""
+        );
+        let order = store
+            .create_order_with_key("alice", vec![request("P001", 2)], Some(key))
+            .unwrap();
+        assert_eq!(
+            store
+                .create_order_with_key("alice", vec![request("P001", 2)], Some(key))
+                .unwrap(),
+            order
+        );
+        assert_eq!(store.get_product("P001").unwrap().stock, 3);
+        assert_eq!(store.orders.len(), 1);
+    }
+
+    #[test]
+    fn no_key_orders_remain_distinct_and_prehashed_registration_rechecks_uniqueness() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,5,1\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        let first = store
+            .create_order("alice", vec![request("P001", 1)])
+            .unwrap();
+        let second = store
+            .create_order("alice", vec![request("P001", 1)])
+            .unwrap();
+        assert_ne!(first.order_id, second.order_id);
+        assert!(!first.order_id.starts_with("OI"));
+        store.check_username_available("new_user").unwrap();
+        let hash = encode_password("password").unwrap();
+        store.register_hashed("new_user", hash.clone()).unwrap();
+        assert_eq!(
+            store.register_hashed("NEW_USER", hash).unwrap_err().code,
+            Code::UsernameExists
+        );
     }
 
     #[test]

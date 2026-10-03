@@ -21,7 +21,7 @@ export function createRegisterSchema(t: TFunction) {
     password: z
       .string()
       .min(4, t('validation.passwordMin'))
-      .max(100, t('validation.passwordMax'))
+      .refine((value) => new TextEncoder().encode(value).length <= 72, t('validation.passwordMaxBytes'))
       .refine((value) => !/[,|:\r\n]/.test(value), t('validation.passwordReservedCharacters')),
   })
 }

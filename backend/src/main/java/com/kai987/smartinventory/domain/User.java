@@ -1,6 +1,7 @@
 package com.kai987.smartinventory.domain;
 
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
 
 public final class User {
     private static final String USERNAME_PATTERN = "[A-Za-z0-9_]{3,20}";
@@ -36,6 +37,7 @@ public final class User {
 
     public static boolean isValidRawPassword(String password) {
         return password != null && password.length() >= 4 && password.length() <= 100
+                && password.getBytes(StandardCharsets.UTF_8).length <= 72
                 && !Product.containsReservedCharacter(password);
     }
 

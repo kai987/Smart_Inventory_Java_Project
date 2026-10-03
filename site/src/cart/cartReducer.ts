@@ -42,5 +42,14 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       return { items: state.items.filter((item) => item.productId !== action.productId) }
     case 'clear':
       return emptyCart
+    case 'consume': {
+      const purchased = new Map(action.items.map((item) => [item.productId, item.quantity]))
+      return {
+        items: state.items.flatMap((item) => {
+          const quantity = item.quantity - (purchased.get(item.productId) ?? 0)
+          return quantity > 0 ? [{ ...item, quantity }] : []
+        }),
+      }
+    }
   }
 }

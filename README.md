@@ -22,6 +22,8 @@ The console and web versions do not share runtime data.
 - Role-aware navigation and authorization for `CUSTOMER` and `ADMIN`
 - Customer cart, order creation, order history, yen totals, weight totals, and 10 kg box estimates
 - Atomic stock validation: repeated cart lines are merged and an insufficient item rejects the whole order without changing stock
+- Account-scoped private query caches and cancellation when the authenticated identity changes
+- Retry-safe checkout with a durable, customer-scoped submission key; successful checkout removes only the submitted cart quantities
 - Admin dashboard, product creation, stock updates, product deletion, and order review
 - Historical order-item snapshots that remain readable after a product changes or is deleted
 - Accessible light and dark themes that follow the operating-system preference on first visit and persist the user's explicit choice
@@ -151,6 +153,16 @@ SMART_INVENTORY_BACKEND=rust npm --prefix frontend run test:e2e
 The build command also runs the non-browser checks. Install Chromium as shown in the E2E section before running the browser suite. The package includes a native executable and a `public/` directory, not a JAR. It runs without Java or Node.js on a compatible OS/CPU; distribute the whole package folder. See [Rust setup, configuration, and safe CSV migration](backend-rust/README.md) before reusing existing data.
 
 Switching backends requires signing in again because Rust uses its own `RUSTSESSIONID` cookie. Both backends use server-side sessions and CSRF protection. The independently deployed `site/` application remains TypeScript/Vinext with D1 and is not automatically changed by the Rust implementation.
+
+### Authentication and checkout boundaries
+
+Registration passwords must contain 4–100 characters and fit within 72 UTF-8 bytes, the BCrypt limit. The form and all three APIs reject longer values instead of silently truncating them; Japanese and Chinese characters can use several bytes each.
+
+Customer and administrator query keys include the verified account identity. Login, logout, and confirmed session expiry cancel private requests and remove the previous account's cache. Late checkout or administrator callbacks cannot apply changes to a different account's current UI.
+
+The cart freezes its edit controls while an order is pending. Checkout sends an `Idempotency-Key` and retains the same key for an unchanged retry, including after a page reload. All three backends accept optional keys consisting of 16–128 ASCII letters, digits, `_`, or `-`. An accepted key is scoped to the customer and encoded into the existing persisted order ID, so replaying the same normalized item quantities returns the original order without decrementing stock again—even after a restart or product deletion. Reusing a key for different quantities returns HTTP 409 (`IDEMPOTENCY_CONFLICT`). Requests without a key retain the original create-new-order behavior.
+
+Successful checkout subtracts only the quantities in its submitted snapshot, preserving cart additions made elsewhere while the request was in flight. A lost response can be retried with the original key even if the accepted order has exhausted current stock. Local CSV backends still require one writer per data directory; idempotency does not turn CSV storage into a multi-instance database.
 
 ## Production build
 

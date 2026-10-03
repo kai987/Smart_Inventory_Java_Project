@@ -16,6 +16,7 @@ use axum::{
     routing::{get, patch, post},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio::sync::Semaphore;
 use tower::ServiceExt;
 use tower_http::{
     cors::CorsLayer,
@@ -24,7 +25,7 @@ use tower_http::{
 
 use crate::{
     config::Config,
-    domain::{RequestedItem, Role, verify_password},
+    domain::{RequestedItem, Role, User, encode_password, verify_password},
     error::{Code, DomainError, FieldError},
     security::{CSRF_HEADER, SessionContext, Sessions, session_middleware, set_session_cookie},
     store::Store,
@@ -36,6 +37,7 @@ pub(crate) struct AppState {
     store: Arc<Mutex<Store>>,
     pub sessions: Sessions,
     config: Config,
+    password_work: Arc<Semaphore>,
 }
 
 /// Build the API and optional prebuilt React SPA with one shared transaction lock.
@@ -60,11 +62,13 @@ pub fn router(store: Store, config: Config) -> Router {
             header::CONTENT_TYPE,
             header::ACCEPT,
             header::HeaderName::from_static("x-csrf-token"),
+            header::HeaderName::from_static("idempotency-key"),
         ])
         .max_age(Duration::from_secs(3600));
     let state = Arc::new(AppState {
         store: Arc::new(Mutex::new(store)),
         sessions: Sessions::new(config.session_timeout),
+        password_work: Arc::new(Semaphore::new(config.password_work_limit.max(1))),
         config,
     });
     Router::new()
@@ -128,6 +132,11 @@ fn error_response_with_status(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    if error.code == Code::RateLimited {
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+    }
     response
 }
 
@@ -153,6 +162,26 @@ where
             .lock()
             .map_err(|_| DomainError::new(Code::InternalError))?;
         operation(&mut store)
+    })
+    .await
+    .map_err(|_| DomainError::new(Code::InternalError))?
+}
+
+// Fail fast instead of accumulating an unbounded BCrypt queue. The blocking
+// task owns the permit, so cancelling an HTTP request cannot free it early.
+async fn password_work<T, F>(state: &Arc<AppState>, operation: F) -> Result<T, DomainError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, DomainError> + Send + 'static,
+{
+    let permit = state
+        .password_work
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| DomainError::new(Code::RateLimited))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        operation()
     })
     .await
     .map_err(|_| DomainError::new(Code::InternalError))?
@@ -280,7 +309,7 @@ async fn login(
         Err(error) => return error_response(error, uri.path()),
     };
     let store = state.store.clone();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = password_work(&state, move || {
         let user = store
             .lock()
             .map_err(|_| DomainError::new(Code::InternalError))?
@@ -300,8 +329,7 @@ async fn login(
         }
         user.ok_or_else(|| DomainError::new(Code::InvalidCredentials))
     })
-    .await
-    .unwrap_or_else(|_| Err(DomainError::new(Code::InternalError)));
+    .await;
     let user = match result {
         Ok(user) => user,
         Err(error) => return error_response(error, uri.path()),
@@ -340,14 +368,32 @@ async fn register(
         Ok(body) => body,
         Err(response) => return response,
     };
-    let result = with_store(&state, move |store| {
-        store.register(
-            &required_text(body.username, "username")?,
-            &required_text(body.password, "password")?,
-        )
-    })
+    let result = async {
+        let username = required_text(body.username, "username")?;
+        let password = required_text(body.password, "password")?;
+        register_user(&state, username, password, encode_password).await
+    }
     .await;
     result_response(result, uri.path(), StatusCode::CREATED)
+}
+
+async fn register_user<F>(
+    state: &Arc<AppState>,
+    username: String,
+    password: String,
+    hash_password: F,
+) -> Result<User, DomainError>
+where
+    F: FnOnce(&str) -> Result<String, DomainError> + Send + 'static,
+{
+    Store::validate_registration(&username, &password)?;
+    let candidate = username.clone();
+    with_store(state, move |store| {
+        store.check_username_available(&candidate)
+    })
+    .await?;
+    let hash = password_work(state, move || hash_password(&password)).await?;
+    with_store(state, move |store| store.register_hashed(&username, hash)).await
 }
 
 async fn me(
@@ -551,6 +597,30 @@ async fn create_order(
         Ok(user) => user,
         Err(error) => return error_response(error, uri.path()),
     };
+    let idempotency_key = match request
+        .headers()
+        .get_all("idempotency-key")
+        .iter()
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [] => None,
+        [value] => match value.to_str() {
+            Ok(value) => Some(value.to_owned()),
+            Err(_) => {
+                return error_response(
+                    DomainError::field("idempotencyKey", "The submission key is invalid."),
+                    uri.path(),
+                );
+            }
+        },
+        _ => {
+            return error_response(
+                DomainError::field("idempotencyKey", "Supply only one submission key."),
+                uri.path(),
+            );
+        }
+    };
     let body: OrderRequest = match read_json(request).await {
         Ok(body) => body,
         Err(response) => return response,
@@ -571,7 +641,7 @@ async fn create_order(
                 })
             })
             .collect::<Result<Vec<_>, DomainError>>()?;
-        store.create_order(&user.username, items)
+        store.create_order_with_key(&user.username, items, idempotency_key.as_deref())
     })
     .await;
     result_response(result, uri.path(), StatusCode::CREATED)
@@ -688,5 +758,163 @@ async fn static_or_not_found(State(state): State<Arc<AppState>>, request: Reques
         Ok(response) if response.status() != StatusCode::NOT_FOUND => response.map(Body::new),
         Ok(_) => error_response(DomainError::new(Code::NotFound), &path),
         Err(_) => error_response(DomainError::new(Code::InternalError), &path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_body_util::BodyExt;
+
+    fn state(directory: &std::path::Path) -> Arc<AppState> {
+        let config = Config {
+            password_work_limit: 1,
+            ..Config::default()
+        };
+        Arc::new(AppState {
+            store: Arc::new(Mutex::new(Store::open(directory).unwrap())),
+            sessions: Sessions::new(config.session_timeout),
+            password_work: Arc::new(Semaphore::new(config.password_work_limit)),
+            config,
+        })
+    }
+
+    fn auth_request(path: &str, username: &str) -> Request {
+        Request::builder()
+            .method(Method::POST)
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({"username": username, "password": "password"}).to_string(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn login_and_registration_share_a_fail_fast_password_work_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = state(directory.path());
+        let permit = state.password_work.clone().acquire_owned().await.unwrap();
+        let uri: Uri = "/api/auth/login".parse().unwrap();
+        let response = login(
+            State(state.clone()),
+            Extension(SessionContext::default()),
+            OriginalUri(uri),
+            auth_request("/api/auth/login", "customer"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[header::RETRY_AFTER], "1");
+        let body: serde_json::Value =
+            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(body["code"], "RATE_LIMITED");
+        let uri: Uri = "/api/auth/register".parse().unwrap();
+        let response = register(
+            State(state.clone()),
+            OriginalUri(uri.clone()),
+            auth_request("/api/auth/register", "new_user"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        // Validate before acquiring scarce CPU capacity or saving an account.
+        let response = register(
+            State(state.clone()),
+            OriginalUri(uri),
+            auth_request("/api/auth/register", "!"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(
+            with_store(&state, |store| Ok(store.find_user("new_user")))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        drop(permit);
+        assert!(password_work(&state, || Ok(())).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn password_work_keeps_store_available_and_keeps_permit_after_request_cancellation() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = state(directory.path());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let work = tokio::spawn(async move {
+            password_work(&worker_state, move || {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                Ok(())
+            })
+            .await
+        });
+        started_rx.await.unwrap();
+        let count = tokio::time::timeout(
+            Duration::from_secs(2),
+            with_store(&state, |store| Ok(store.list_products(None, false).len())),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(count, 4);
+        work.abort();
+        assert_eq!(
+            password_work(&state, || Ok(())).await.unwrap_err().code,
+            Code::RateLimited
+        );
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if state.password_work.available_permits() == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(password_work(&state, || Ok(())).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn product_reads_proceed_while_registration_hash_is_blocked() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = state(directory.path());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let registration_state = state.clone();
+        let registration = tokio::spawn(async move {
+            register_user(
+                &registration_state,
+                "new_user".into(),
+                "password".into(),
+                move |password| {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    encode_password(password)
+                },
+            )
+            .await
+        });
+        started_rx.await.unwrap();
+        let response = tokio::time::timeout(
+            Duration::from_secs(2),
+            products(
+                State(state.clone()),
+                OriginalUri("/api/products".parse().unwrap()),
+                RawQuery(None),
+            ),
+        )
+        .await;
+        release_tx.send(()).unwrap();
+        let response = response.expect("A registration hash must not block product reads");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(body["total"], 4);
+        assert_eq!(registration.await.unwrap().unwrap().username, "new_user");
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,11 +33,12 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication authentication) {
         var requested = request.items().stream()
                 .map(item -> new OrderManager.RequestedItem(item.productId(), item.quantity()))
                 .toList();
-        var order = service.createOrder(authentication.getName(), requested);
+        var order = service.createOrder(authentication.getName(), requested, idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toOrder(order));
     }
 

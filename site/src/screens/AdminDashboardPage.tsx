@@ -6,6 +6,7 @@ import { adminApi } from '../api/adminApi'
 import { orderApi } from '../api/orderApi'
 import { productApi } from '../api/productApi'
 import { queryKeys } from '../app/queryClient'
+import { useAuth } from '../auth/AuthProvider'
 import { ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
@@ -14,13 +15,14 @@ import pageStyles from './pages.module.css'
 
 export default function AdminDashboardPage() {
   const { t } = useTranslation()
+  const { user, runProtectedRequest, isChangingSession } = useAuth()
   const { formatNumber, formatYen } = useLocaleFormatters()
   useLocalizedDocumentTitle('admin.dashboardTitle')
   const [summary, products, orders] = useQueries({
     queries: [
-      { queryKey: queryKeys.adminSummary, queryFn: adminApi.summary },
+      { queryKey: queryKeys.adminSummary(user?.username ?? ''), queryFn: ({ signal }) => runProtectedRequest((scope) => adminApi.summary(AbortSignal.any([signal, scope]))), enabled: user?.role === 'ADMIN' && !isChangingSession },
       { queryKey: queryKeys.products({ q: '', inStockOnly: false }), queryFn: ({ signal }) => productApi.list({ q: '', inStockOnly: false }, signal) },
-      { queryKey: queryKeys.adminOrders(''), queryFn: ({ signal }) => orderApi.all('', signal) },
+      { queryKey: queryKeys.adminOrders(user?.username ?? '', ''), queryFn: ({ signal }) => runProtectedRequest((scope) => orderApi.all('', AbortSignal.any([signal, scope]))), enabled: user?.role === 'ADMIN' && !isChangingSession },
     ],
   })
 

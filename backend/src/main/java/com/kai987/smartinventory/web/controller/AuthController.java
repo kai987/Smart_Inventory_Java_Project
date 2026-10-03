@@ -1,5 +1,7 @@
 package com.kai987.smartinventory.web.controller;
 
+import java.nio.charset.StandardCharsets;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -66,6 +68,9 @@ public class AuthController {
     @PostMapping("/login")
     public UserResponse login(@Valid @RequestBody LoginRequest request,
             HttpServletRequest servletRequest, HttpServletResponse servletResponse) {
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new DomainException(ErrorCode.INVALID_CREDENTIALS);
+        }
         try {
             Authentication authentication = authenticationManager.authenticate(
                     UsernamePasswordAuthenticationToken.unauthenticated(

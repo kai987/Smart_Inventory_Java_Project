@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { orderApi } from '../api/orderApi'
@@ -9,6 +9,9 @@ import { toApiError } from '../api/apiError'
 import { queryKeys } from '../app/queryClient'
 import { useAuth } from '../auth/AuthProvider'
 import { useCart } from '../cart/CartProvider'
+import { completeCheckoutIntent, getCheckoutKey, getPendingCheckoutKey } from '../cart/checkoutIntent'
+import type { CartItem } from '../cart/cartTypes'
+import type { User } from '../api/types'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
@@ -24,11 +27,20 @@ type CartError =
   | { type: 'translation'; key: 'cart.stockChanged' | 'cart.customerOnly' }
   | { type: 'api'; error: ReturnType<typeof toApiError> }
 
+type CheckoutSubmission = {
+  items: CartItem[]
+  user: User
+  sessionVersion: number
+  idempotencyKey: string
+  signal: AbortSignal
+}
+
 export function CartPage() {
   const { t } = useTranslation()
   const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
-  const { state, dispatch } = useCart()
-  const { user } = useAuth()
+  const { state, dispatch, consumeOrder } = useCart()
+  const { user, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
+  const submitting = useRef(false)
   const { showToast } = useToast()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -48,6 +60,9 @@ export function CartPage() {
   )
 
   useEffect(() => {
+    if (submitting.current) return
+    // A lost response may already have reduced stock. Keep its payload intact for replay.
+    if (user !== null && getPendingCheckoutKey(user.username, state.items) !== null) return
     if (products.data === undefined) return
     for (const item of state.items) {
       const product = productMap.get(item.productId)
@@ -59,7 +74,7 @@ export function CartPage() {
         }), 'info')
       }
     }
-  }, [dispatch, formatNumber, productMap, products.data, showToast, state.items, t])
+  }, [dispatch, formatNumber, productMap, products.data, showToast, state.items, t, user])
 
   const resolvedItems = state.items.map((cartItem) => ({ cartItem, product: productMap.get(cartItem.productId) }))
   const hasUnavailable = resolvedItems.some(({ product }) => product === undefined || product.stock === 0)
@@ -73,6 +88,7 @@ export function CartPage() {
   )
   const estimatedBoxes = totalWeight === 0 ? 0 : Math.ceil(totalWeight / 10)
   const hasQuantityErrors = state.items.some((item) => invalidQuantityIds.has(item.productId))
+  const canReplayOrder = user !== null && getPendingCheckoutKey(user.username, state.items) !== null
 
   const clearQuantityInputState = (productId: string) => {
     setQuantityDrafts((current) => {
@@ -103,19 +119,23 @@ export function CartPage() {
   }
 
   const placeOrder = useMutation({
-    mutationFn: () => orderApi.create({ items: state.items }),
-    onSuccess: async () => {
-      dispatch({ type: 'clear' })
+    mutationFn: (submission: CheckoutSubmission) => runProtectedRequest(() => orderApi.create({ items: submission.items }, submission.idempotencyKey, submission.signal)),
+    onSuccess: async (order, submission) => {
+      if (!isCurrentSession(submission.user, submission.sessionVersion)) return
+      if (!consumeOrder(`${submission.user.username}:${order.orderId}`, submission.items)) return
+      completeCheckoutIntent(submission.user.username, submission.idempotencyKey)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.productsRoot }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.myOrders }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.myOrders(submission.user.username, submission.user.role) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.adminOrdersRoot }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.adminSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.adminSummaryRoot }),
       ])
+      if (!isCurrentSession(submission.user, submission.sessionVersion)) return
       showToast(t('cart.orderSuccess'), 'success')
       void navigate('/orders')
     },
-    onError: (error) => {
+    onError: (error, submission) => {
+      if (!isCurrentSession(submission.user, submission.sessionVersion)) return
       const apiError = toApiError(error)
       setOrderError(
         apiError.code === 'INSUFFICIENT_STOCK'
@@ -124,9 +144,11 @@ export function CartPage() {
       )
       void products.refetch()
     },
+    onSettled: () => { submitting.current = false },
   })
 
   const handleCheckout = () => {
+    if (submitting.current || isChangingSession) return
     setOrderError(null)
     if (user === null) {
       void navigate('/login?next=/cart')
@@ -136,7 +158,9 @@ export function CartPage() {
       setOrderError({ type: 'translation', key: 'cart.customerOnly' })
       return
     }
-    placeOrder.mutate()
+    const items = state.items.map((item) => ({ ...item }))
+    submitting.current = true
+    placeOrder.mutate({ items, user, sessionVersion: getSessionVersion(), idempotencyKey: getCheckoutKey(user.username, items), signal: getSessionSignal() })
   }
 
   if (state.items.length === 0) {
@@ -179,20 +203,20 @@ export function CartPage() {
                       <strong>{product?.name ?? t('cart.unavailableProduct')}</strong>
                       <span>{cartItem.productId}</span>
                       {unavailable
-                        ? <span className={orderStyles.unavailableText}>{t('cart.removeUnavailable')}</span>
+                        ? <span className={orderStyles.unavailableText}>{t(canReplayOrder ? 'cart.awaitingConfirmation' : 'cart.removeUnavailable')}</span>
                         : <span>{t('cart.currentStock', { stock: formatNumber(product.stock) })}</span>}
                     </div>
                   </div>
                   <div className={orderStyles.quantityField}>
                     <div className={orderStyles.quantityControl} aria-label={t('cart.quantityFor', { productName: product?.name ?? cartItem.productId })}>
-                      <button type="button" onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'decrement', productId: cartItem.productId }) }} aria-label={t('cart.decreaseQuantity')}><Minus /></button>
+                      <button type="button" disabled={placeOrder.isPending} onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'decrement', productId: cartItem.productId }) }} aria-label={t('cart.decreaseQuantity')}><Minus /></button>
                       <input
                         type="number"
                         min="1"
                         step="1"
                         max={product?.stock}
                         value={quantityDrafts.get(cartItem.productId) ?? cartItem.quantity}
-                        disabled={unavailable}
+                        disabled={unavailable || placeOrder.isPending}
                         onChange={(event) => handleQuantityChange(cartItem.productId, event.target.value, product?.stock)}
                         aria-label={t('cart.quantityFor', { productName: product?.name ?? cartItem.productId })}
                         aria-invalid={hasQuantityError || undefined}
@@ -201,7 +225,7 @@ export function CartPage() {
                       <button
                         type="button"
                         onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'increment', productId: cartItem.productId }) }}
-                        disabled={product === undefined || cartItem.quantity >= product.stock}
+                        disabled={placeOrder.isPending || product === undefined || cartItem.quantity >= product.stock}
                         aria-label={t('cart.increaseQuantity')}
                       ><Plus /></button>
                     </div>
@@ -211,7 +235,7 @@ export function CartPage() {
                     <span>{t('cart.subtotal')}</span>
                     <strong>{product === undefined ? '—' : formatYen(multiplyYen(product.priceYen, cartItem.quantity))}</strong>
                   </div>
-                  <button className={orderStyles.removeButton} type="button" onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'remove', productId: cartItem.productId }) }} aria-label={t('cart.removeItem', { productName: product?.name ?? cartItem.productId })}><Trash2 /></button>
+                  <button className={orderStyles.removeButton} type="button" disabled={placeOrder.isPending} onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'remove', productId: cartItem.productId }) }} aria-label={t('cart.removeItem', { productName: product?.name ?? cartItem.productId })}><Trash2 /></button>
                 </article>
               )
             })}
@@ -219,7 +243,8 @@ export function CartPage() {
 
           <aside className={orderStyles.cartSummary} aria-labelledby="order-summary-title">
             <h2 id="order-summary-title">{t('cart.summaryTitle')}</h2>
-            {hasUnavailable ? <p className={orderStyles.cartAlert}>{t('cart.unavailableItems')}</p> : null}
+            {hasUnavailable && !canReplayOrder ? <p className={orderStyles.cartAlert}>{t('cart.unavailableItems')}</p> : null}
+            {canReplayOrder ? <p className={orderStyles.cartNote}>{t('cart.retryOrderHint')}</p> : null}
             {orderError === null ? null : (
               <p className={orderStyles.cartError} role="alert">
                 {orderError.type === 'translation' ? t(orderError.key) : translateApiError(orderError.error, t)}
@@ -230,7 +255,7 @@ export function CartPage() {
               <div><dt>{t('cart.estimatedBoxes')}</dt><dd>{formatNumber(estimatedBoxes)}</dd></div>
               <div className={orderStyles.grandTotal}><dt>{t('cart.totalPrice')}</dt><dd>{formatYen(totalPrice)}</dd></div>
             </dl>
-            <Button type="button" disabled={hasUnavailable || hasQuantityErrors || placeOrder.isPending} onClick={handleCheckout}>
+            <Button type="button" disabled={isChangingSession || (hasUnavailable && !canReplayOrder) || hasQuantityErrors || placeOrder.isPending} onClick={handleCheckout}>
               {placeOrder.isPending ? t('cart.placingOrder') : user === null ? t('cart.loginRequired') : t('cart.placeOrder')}
             </Button>
             <p className={orderStyles.cartNote}>{t('cart.serverValidationNote')}</p>

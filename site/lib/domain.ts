@@ -52,6 +52,8 @@ export function registrationErrors(value: unknown): FieldError[] {
   }
   if (typeof input.password !== 'string' || input.password.length < 4 || input.password.length > 100) {
     errors.push({ field: 'password', message: 'Password must contain 4-100 characters.' });
+  } else if (new TextEncoder().encode(input.password).length > 72) {
+    errors.push({ field: 'password', message: 'Password must not exceed 72 UTF-8 bytes.' });
   } else if (reservedCharacter.test(input.password)) {
     errors.push({ field: 'password', message: 'Password contains a reserved character.' });
   }

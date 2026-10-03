@@ -13,6 +13,8 @@ pub enum Code {
     ProductNotFound,
     EmptyOrder,
     InsufficientStock,
+    IdempotencyConflict,
+    RateLimited,
     PersistenceError,
     NotFound,
     InternalError,
@@ -25,7 +27,11 @@ impl Code {
             Self::InvalidCredentials | Self::Unauthenticated => 401,
             Self::Forbidden | Self::CsrfInvalid => 403,
             Self::ProductNotFound | Self::NotFound => 404,
-            Self::UsernameExists | Self::ProductExists | Self::InsufficientStock => 409,
+            Self::UsernameExists
+            | Self::ProductExists
+            | Self::InsufficientStock
+            | Self::IdempotencyConflict => 409,
+            Self::RateLimited => 429,
             Self::PersistenceError | Self::InternalError => 500,
         }
     }
@@ -42,6 +48,8 @@ impl Code {
             Self::ProductNotFound => "PRODUCT_NOT_FOUND",
             Self::EmptyOrder => "EMPTY_ORDER",
             Self::InsufficientStock => "INSUFFICIENT_STOCK",
+            Self::IdempotencyConflict => "IDEMPOTENCY_CONFLICT",
+            Self::RateLimited => "RATE_LIMITED",
             Self::PersistenceError => "PERSISTENCE_ERROR",
             Self::NotFound => "NOT_FOUND",
             Self::InternalError => "INTERNAL_ERROR",
@@ -60,6 +68,10 @@ impl Code {
             Self::ProductNotFound => "The requested product was not found.",
             Self::EmptyOrder => "An order must contain at least one item.",
             Self::InsufficientStock => "One or more products do not have enough stock.",
+            Self::IdempotencyConflict => {
+                "That submission key was already used for a different order."
+            }
+            Self::RateLimited => "Too many authentication requests. Please try again shortly.",
             Self::PersistenceError => "The data could not be saved safely.",
             Self::NotFound => "The requested resource was not found.",
             Self::InternalError => "An unexpected error occurred.",

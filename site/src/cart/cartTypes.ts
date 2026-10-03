@@ -22,3 +22,4 @@ export type CartAction =
   | { type: 'setQuantity'; productId: string; quantity: number }
   | { type: 'remove'; productId: string }
   | { type: 'clear' }
+  | { type: 'consume'; items: readonly CartItem[] }

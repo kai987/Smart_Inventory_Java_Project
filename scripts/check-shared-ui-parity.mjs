@@ -6,6 +6,17 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const explicitSharedPaths = [
   'app/providers.tsx',
+  'app/queryClient.ts',
+  'auth/AuthProvider.tsx',
+  'api/orderApi.ts',
+  'api/productApi.ts',
+  'api/authApi.ts',
+  'api/adminApi.ts',
+  'api/httpClient.ts',
+  'cart/cartReducer.ts',
+  'cart/cartTypes.ts',
+  'cart/CartProvider.tsx',
+  'cart/checkoutIntent.ts',
   'auth/RequireAuth.tsx',
   'auth/RequireRole.tsx',
   'theme/theme.ts',

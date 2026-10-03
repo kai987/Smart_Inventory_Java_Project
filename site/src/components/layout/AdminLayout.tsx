@@ -17,17 +17,22 @@ function adminLinkClass({ isActive }: { isActive: boolean }) {
 export function AdminLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { t } = useTranslation()
-  const { user, logout } = useAuth()
+  const { user, logout, isChangingSession, getSessionVersion } = useAuth()
   const { showToast } = useToast()
   const location = useLocation()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
+    let version = getSessionVersion()
     try {
-      await logout()
+      const pending = logout()
+      version = getSessionVersion()
+      await pending
+      if (getSessionVersion() !== version) return
       showToast(t('auth.logoutSuccess'), 'success')
       void navigate('/products')
     } catch (error) {
+      if (getSessionVersion() !== version) return
       showToast(translateApiError(error, t), 'error')
     }
   }
@@ -46,7 +51,7 @@ export function AdminLayout() {
       <div className={styles.adminUser}>
         <span className={styles.avatar}><UserRound /></span>
         <div><strong>{user?.username}</strong><span>{t('auth.administrator')}</span></div>
-        <button type="button" onClick={() => void handleLogout()} aria-label={t('navigation.logout')}><LogOut /></button>
+        <button type="button" disabled={isChangingSession} onClick={() => void handleLogout()} aria-label={t('navigation.logout')}><LogOut /></button>
       </div>
     </>
   )

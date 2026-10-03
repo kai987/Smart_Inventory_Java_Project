@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { orderApi } from '../api/orderApi'
 import { queryKeys } from '../app/queryClient'
+import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { Button } from '../components/ui/Button'
 import { OrderCard } from '../features/orders/OrderCard'
@@ -14,8 +15,13 @@ import pageStyles from './pages.module.css'
 export function OrdersPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { user, runProtectedRequest, isChangingSession } = useAuth()
   useLocalizedDocumentTitle('orders.title')
-  const orders = useQuery({ queryKey: queryKeys.myOrders, queryFn: orderApi.mine })
+  const orders = useQuery({
+    queryKey: queryKeys.myOrders(user?.username ?? '', user?.role ?? 'CUSTOMER'),
+    queryFn: ({ signal }) => runProtectedRequest((scope) => orderApi.mine(AbortSignal.any([signal, scope]))),
+    enabled: user !== null && !isChangingSession,
+  })
 
   return (
     <div>

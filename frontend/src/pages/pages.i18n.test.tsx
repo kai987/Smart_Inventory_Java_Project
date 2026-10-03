@@ -133,26 +133,26 @@ describe.each(languageCases)('$language page localization', ({ language, labels 
   })
 
   it('localizes the customer orders page', async () => {
-    renderWithProviders(<OrdersPage />, { language })
+    renderWithProviders(<OrdersPage />, { language, user: { username: 'customer', role: 'CUSTOMER' } })
     expect(screen.getByRole('heading', { name: labels.orders })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: labels.browseProducts })).toBeInTheDocument()
   })
 
   it('localizes the admin dashboard', async () => {
-    renderWithProviders(<AdminDashboardPage />, { language })
+    renderWithProviders(<AdminDashboardPage />, { language, user: { username: 'admin', role: 'ADMIN' } })
     expect(await screen.findByRole('heading', { name: labels.dashboard })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Inventory overview' })).not.toBeInTheDocument()
   })
 
   it('localizes admin product controls and table headings', async () => {
-    renderWithProviders(<AdminProductsPage />, { language })
+    renderWithProviders(<AdminProductsPage />, { language, user: { username: 'admin', role: 'ADMIN' } })
     expect(screen.getByRole('heading', { name: labels.productsAdmin })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: labels.addProduct })).toBeInTheDocument()
     expect(await screen.findByRole('columnheader', { name: labels.productId })).toBeInTheDocument()
   })
 
   it('localizes admin orders and order labels', async () => {
-    renderWithProviders(<AdminOrdersPage />, { language })
+    renderWithProviders(<AdminOrdersPage />, { language, user: { username: 'admin', role: 'ADMIN' } })
     expect(screen.getByRole('heading', { name: labels.ordersAdmin })).toBeInTheDocument()
     expect(await screen.findByText(labels.orderId)).toBeInTheDocument()
   })

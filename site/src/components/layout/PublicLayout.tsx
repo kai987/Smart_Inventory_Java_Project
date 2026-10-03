@@ -19,7 +19,7 @@ function navClass({ isActive }: { isActive: boolean }) {
 export function PublicLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
-  const { user, logout } = useAuth()
+  const { user, logout, isChangingSession, getSessionVersion } = useAuth()
   const { itemCount } = useCart()
   const { formatNumber } = useLocaleFormatters()
   const { showToast } = useToast()
@@ -28,11 +28,16 @@ export function PublicLayout() {
   const formattedItemCount = formatNumber(itemCount)
 
   const handleLogout = async () => {
+    let version = getSessionVersion()
     try {
-      await logout()
+      const pending = logout()
+      version = getSessionVersion()
+      await pending
+      if (getSessionVersion() !== version) return
       showToast(t('auth.logoutSuccess'), 'success')
       void navigate('/products')
     } catch (error) {
+      if (getSessionVersion() !== version) return
       showToast(translateApiError(error, t), 'error')
     }
   }
@@ -72,7 +77,7 @@ export function PublicLayout() {
                 <NavLink to="/register" className={navClass} onClick={closeMenu}><UserPlus aria-hidden="true" /> {t('navigation.register')}</NavLink>
               </>
             ) : (
-              <button className={styles.navButton} type="button" onClick={() => { closeMenu(); void handleLogout() }}>
+              <button className={styles.navButton} type="button" disabled={isChangingSession} onClick={() => { closeMenu(); void handleLogout() }}>
                 <LogOut aria-hidden="true" /> {t('navigation.logout')}
               </button>
             )}

@@ -197,6 +197,12 @@ describe('API error localization', () => {
     ['en', 'NETWORK_ERROR', en.errors.NETWORK_ERROR],
     ['ja', 'NETWORK_ERROR', ja.errors.NETWORK_ERROR],
     ['zh-CN', 'NETWORK_ERROR', zhCN.errors.NETWORK_ERROR],
+    ['en', 'IDEMPOTENCY_CONFLICT', en.errors.IDEMPOTENCY_CONFLICT],
+    ['ja', 'IDEMPOTENCY_CONFLICT', ja.errors.IDEMPOTENCY_CONFLICT],
+    ['zh-CN', 'IDEMPOTENCY_CONFLICT', zhCN.errors.IDEMPOTENCY_CONFLICT],
+    ['en', 'RATE_LIMITED', en.errors.RATE_LIMITED],
+    ['ja', 'RATE_LIMITED', ja.errors.RATE_LIMITED],
+    ['zh-CN', 'RATE_LIMITED', zhCN.errors.RATE_LIMITED],
   ] as const)('translates %s %s errors', (language, code, expected) => {
     const t = createI18nInstance(language).getFixedT(language)
     expect(translateApiError(apiError(code), t)).toBe(expected)

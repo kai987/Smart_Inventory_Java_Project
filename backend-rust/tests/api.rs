@@ -66,6 +66,18 @@ impl Client {
             .unwrap()
     }
 
+    fn keyed_order(&self, key: &str, items: Value) -> Request<Body> {
+        let mut request = self.request(
+            Method::POST,
+            "/api/orders",
+            Some(json!({"items": items}).to_string()),
+        );
+        request
+            .headers_mut()
+            .insert("idempotency-key", key.parse().unwrap());
+        request
+    }
+
     async fn send_raw(&mut self, method: Method, path: &str, body: Option<String>) -> Reply {
         let response = call(&self.app, self.request(method, path, body)).await;
         if let Some(cookie) = response.headers.get(header::SET_COOKIE) {
@@ -125,6 +137,7 @@ fn fixture(timeout: Duration, secure_cookie: bool) -> (TempDir, Router) {
         secure_cookie,
         session_timeout: timeout,
         low_stock_threshold: 5,
+        password_work_limit: 4,
     };
     (directory, router(store, config))
 }
@@ -608,6 +621,187 @@ async fn concurrent_orders_cannot_oversell_and_customer_scope_is_enforced() {
 }
 
 #[tokio::test]
+async fn concurrent_keyed_orders_commit_once_and_replay_matches_normalized_intent() {
+    let (directory, app) = app();
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    let key = "browser-retry-12345";
+    let items = json!([{"productId":"P002","quantity":2},{"productId":"P002","quantity":1}]);
+    let before = customer
+        .send(Method::GET, "/api/orders/me", None)
+        .await
+        .body["total"]
+        .as_u64()
+        .unwrap();
+    let (first, second) = tokio::join!(
+        call(&app, customer.keyed_order(key, items.clone())),
+        call(&app, customer.keyed_order(key, items)),
+    );
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.text);
+    assert_eq!(second.status, StatusCode::CREATED, "{}", second.text);
+    assert_eq!(first.body, second.body);
+    assert_eq!(first.body["items"][0]["quantity"], 3);
+    assert_eq!(
+        customer
+            .send(Method::GET, "/api/products/P002", None)
+            .await
+            .body["stock"],
+        27
+    );
+    assert_eq!(
+        customer
+            .send(Method::GET, "/api/orders/me", None)
+            .await
+            .body["total"],
+        before + 1
+    );
+    let saved = std::fs::read(directory.path().join("data/orders.csv")).unwrap();
+    let replay = call(
+        &app,
+        customer.keyed_order(key, json!([{"productId":"P002","quantity":3}])),
+    )
+    .await;
+    assert_eq!(replay.body, first.body);
+    assert_eq!(
+        std::fs::read(directory.path().join("data/orders.csv")).unwrap(),
+        saved
+    );
+    assert_error(
+        &call(
+            &app,
+            customer.keyed_order(key, json!([{"productId":"P002","quantity":4}])),
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "IDEMPOTENCY_CONFLICT",
+        "/api/orders",
+    );
+    assert_error(
+        &call(
+            &app,
+            customer.keyed_order(key, json!([{"productId":"P002","quantity":0}])),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "VALIDATION_ERROR",
+        "/api/orders",
+    );
+}
+
+#[tokio::test]
+async fn keyed_order_header_validation_and_customer_scope_preserve_stock() {
+    let (_directory, app) = app();
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    let items = json!([{"productId":"P002","quantity":1}]);
+    for key in [
+        "",
+        "too-short",
+        "0123456789abcdef:bad",
+        "contains a space here",
+    ] {
+        assert_error(
+            &call(&app, customer.keyed_order(key, items.clone())).await,
+            StatusCode::BAD_REQUEST,
+            "VALIDATION_ERROR",
+            "/api/orders",
+        );
+    }
+    let mut duplicated = customer.keyed_order("duplicate-key-1234", items.clone());
+    duplicated
+        .headers_mut()
+        .append("idempotency-key", "duplicate-key-1234".parse().unwrap());
+    assert_error(
+        &call(&app, duplicated).await,
+        StatusCode::BAD_REQUEST,
+        "VALIDATION_ERROR",
+        "/api/orders",
+    );
+    assert_eq!(
+        customer
+            .send(Method::GET, "/api/products/P002", None)
+            .await
+            .body["stock"],
+        30
+    );
+    let key = "same-key-two-users";
+    let first = call(&app, customer.keyed_order(key, items.clone())).await;
+    let mut second_customer = Client::new(&app);
+    second_customer.fetch_csrf().await;
+    assert_eq!(
+        second_customer
+            .send(
+                Method::POST,
+                "/api/auth/register",
+                Some(json!({"username":"bobby","password":"password"}))
+            )
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    second_customer.login("bobby", "password").await;
+    let second = call(&app, second_customer.keyed_order(key, items.clone())).await;
+    assert_eq!(second.status, StatusCode::CREATED);
+    assert_eq!(second.body["customerName"], "bobby");
+    assert_ne!(first.body["orderId"], second.body["orderId"]);
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    assert_error(
+        &call(&app, admin.keyed_order(key, items)).await,
+        StatusCode::FORBIDDEN,
+        "FORBIDDEN",
+        "/api/orders",
+    );
+    assert_eq!(
+        customer
+            .send(Method::GET, "/api/products/P002", None)
+            .await
+            .body["stock"],
+        28
+    );
+}
+
+#[tokio::test]
+async fn concurrent_registration_cannot_persist_duplicate_names() {
+    let (directory, app) = app();
+    let mut first = Client::new(&app);
+    let mut second = Client::new(&app);
+    first.fetch_csrf().await;
+    second.fetch_csrf().await;
+    let body = json!({"username":"race_user","password":"password"}).to_string();
+    let (first, second) = tokio::join!(
+        call(
+            &app,
+            first.request(Method::POST, "/api/auth/register", Some(body.clone()))
+        ),
+        call(
+            &app,
+            second.request(Method::POST, "/api/auth/register", Some(body))
+        ),
+    );
+    let (success, failure) = if first.status == StatusCode::CREATED {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(success.status, StatusCode::CREATED, "{}", success.text);
+    assert_error(
+        &failure,
+        StatusCode::CONFLICT,
+        "USERNAME_EXISTS",
+        "/api/auth/register",
+    );
+    let users = std::fs::read_to_string(directory.path().join("data/users.csv")).unwrap();
+    assert_eq!(
+        users
+            .lines()
+            .filter(|line| line.starts_with("race_user,"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn bounded_json_and_cors_allow_only_configured_origin() {
     let (_directory, app) = app();
     let mut client = Client::new(&app);
@@ -646,7 +840,7 @@ async fn bounded_json_and_cors_allow_only_configured_origin() {
             .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
             .header(
                 header::ACCESS_CONTROL_REQUEST_HEADERS,
-                "content-type,x-csrf-token",
+                "content-type,x-csrf-token,idempotency-key",
             )
             .body(Body::empty())
             .unwrap();
@@ -663,6 +857,12 @@ async fn bounded_json_and_cors_allow_only_configured_origin() {
             assert_eq!(
                 reply.headers[header::ACCESS_CONTROL_ALLOW_CREDENTIALS],
                 "true"
+            );
+            assert!(
+                reply.headers[header::ACCESS_CONTROL_ALLOW_HEADERS]
+                    .to_str()
+                    .unwrap()
+                    .contains("idempotency-key")
             );
         }
     }

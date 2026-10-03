@@ -13,10 +13,10 @@ export const productApi = {
     return data
   },
   get: async (id: string): Promise<Product> => (await httpClient.get<Product>(`/products/${encodeURIComponent(id)}`)).data,
-  create: async (request: CreateProductRequest): Promise<Product> => (await httpClient.post<Product>('/products', request)).data,
-  updateStock: async (id: string, stock: number): Promise<Product> =>
-    (await httpClient.patch<Product>(`/products/${encodeURIComponent(id)}/stock`, { stock })).data,
-  remove: async (id: string): Promise<void> => {
-    await httpClient.delete(`/products/${encodeURIComponent(id)}`)
+  create: async (request: CreateProductRequest, signal?: AbortSignal): Promise<Product> => (await httpClient.post<Product>('/products', request, signal === undefined ? {} : { signal })).data,
+  updateStock: async (id: string, stock: number, signal?: AbortSignal): Promise<Product> =>
+    (await httpClient.patch<Product>(`/products/${encodeURIComponent(id)}/stock`, { stock }, signal === undefined ? {} : { signal })).data,
+  remove: async (id: string, signal?: AbortSignal): Promise<void> => {
+    await httpClient.delete(`/products/${encodeURIComponent(id)}`, signal === undefined ? {} : { signal })
   },
 }

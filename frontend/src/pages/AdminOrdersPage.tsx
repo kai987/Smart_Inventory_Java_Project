@@ -4,6 +4,7 @@ import { useDeferredValue, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { orderApi } from '../api/orderApi'
 import { queryKeys } from '../app/queryClient'
+import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
@@ -12,14 +13,16 @@ import pageStyles from './pages.module.css'
 
 export default function AdminOrdersPage() {
   const { t } = useTranslation()
+  const { user, runProtectedRequest, isChangingSession } = useAuth()
   const { formatNumber, formatWeight, formatYen } = useLocaleFormatters()
   const [customer, setCustomer] = useState('')
   const deferredCustomer = useDeferredValue(customer.trim())
   useLocalizedDocumentTitle('admin.ordersTitle')
   const orders = useQuery({
-    queryKey: queryKeys.adminOrders(deferredCustomer),
-    queryFn: ({ signal }) => orderApi.all(deferredCustomer, signal),
-    placeholderData: (previous) => previous,
+    queryKey: queryKeys.adminOrders(user?.username ?? '', deferredCustomer),
+    queryFn: ({ signal }) => runProtectedRequest((scope) => orderApi.all(deferredCustomer, AbortSignal.any([signal, scope]))),
+    enabled: user?.role === 'ADMIN' && !isChangingSession,
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[2] === user?.username ? previous : undefined,
   })
 
   return (

@@ -25,7 +25,7 @@ export function useLocalizedDocumentTitle(titleKey: DocumentTitleKey): void {
     if (description === null) {
       description = document.createElement('meta')
       description.name = 'description'
-      document.head.append(description)
+      document.head.appendChild(description)
     }
     description.content = t('metadata.description')
   }, [resolvedLanguage, t, titleKey])

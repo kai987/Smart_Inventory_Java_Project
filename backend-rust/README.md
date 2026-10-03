@@ -33,7 +33,7 @@ For a frontend served directly by Rust, build it first with `npm --prefix fronte
 
 The default accounts are `admin` / `admin123` and `customer` / `user123`. They are public demo accounts, not production credentials. Passwords are stored as bcrypt hashes. Rust uses an `HttpOnly`, `SameSite=Lax` cookie named `RUSTSESSIONID`; switching from Java requires a fresh login. Sessions expire after 30 idle minutes by default and are lost on restart. State-changing requests, including login and registration, require the CSRF token returned by `/api/auth/csrf`.
 
-Passwords must also fit bcrypt's **72 UTF-8 byte maximum**. The existing frontend's 100-character limit is only a form limit, not a guarantee that bcrypt can encode every such value: non-ASCII characters often require several bytes each. Rust rejects overlong passwords instead of silently truncating them.
+Passwords must also fit bcrypt's **72 UTF-8 byte maximum**. The shared frontend and Java, Rust, and Site APIs validate this byte limit in addition to the 4–100-character rule. Non-ASCII characters often require several bytes each. Overlong passwords are rejected instead of silently truncated.
 
 ## Configuration
 
@@ -47,8 +47,17 @@ Passwords must also fit bcrypt's **72 UTF-8 byte maximum**. The existing fronten
 | `SMART_INVENTORY_SECURE_COOKIE` | `false` | Use `true` behind HTTPS |
 | `SMART_INVENTORY_SESSION_TIMEOUT_SECONDS` | `1800` | Idle session lifetime |
 | `SMART_INVENTORY_LOW_STOCK_THRESHOLD` | `5` | Dashboard low-stock threshold |
+| `SMART_INVENTORY_PASSWORD_WORK_LIMIT` | `4` | Maximum concurrent BCrypt login/registration tasks; valid range 1–64 |
 
 The development Vite proxy expects backend port 8080. A direct Rust or packaged application can use a different port. Use an explicit data directory for an executable copied outside its source checkout. The generated package launcher sets data and static paths relative to the package, so it can be launched from any working directory.
+
+Login and registration perform BCrypt work outside the inventory lock. They share a bounded CPU-work limit; excess requests fail promptly with HTTP 429 (`RATE_LIMITED`) and `Retry-After: 1` rather than accumulating an unbounded queue. A cancelled request keeps its permit until the blocking password task actually finishes. This is a CPU concurrency guard, not a per-user or per-IP login-attempt rate limiter.
+
+## Retry-safe order submission
+
+`POST /api/orders` accepts an optional `Idempotency-Key` containing 16–128 ASCII letters, digits, `_`, or `-`. It is scoped to the authenticated customer and stored through a deterministic order ID in the existing CSV format. Repeating the same normalized product quantities returns the saved order without another stock deduction, including after restarting the server or deleting a product. Reusing the key with different quantities returns HTTP 409 (`IDEMPOTENCY_CONFLICT`); an unsuccessful transaction does not reserve the key. Without the header, each accepted request creates a new order as before.
+
+The shared cart retains its key across an unchanged retry and page reload, freezes checkout controls while pending, and removes only the successfully submitted quantities. Java and the D1-backed Site implement the same key and response semantics.
 
 ## Tests
 
