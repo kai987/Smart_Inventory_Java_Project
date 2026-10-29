@@ -3,11 +3,43 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 const LANGUAGE_STORAGE_KEY = 'smart-inventory-language:v1'
 const THEME_STORAGE_KEY = 'smart-inventory-theme:v1'
 
-async function selectLanguage(page: Page, currentLabel: string, language: 'en' | 'ja' | 'zh-CN') {
+const productNames = {
+  en: { P001: 'Laptop', P004: 'Monitor' },
+  ja: { P001: 'ノートパソコン', P004: 'モニター' },
+  'zh-CN': { P001: '笔记本电脑', P004: '显示器' },
+} as const
+type Language = keyof typeof productNames
+
+function productCard(page: Page, productId: string) {
+  return page.getByRole('article').filter({ has: page.getByText(productId, { exact: true }) })
+}
+
+async function expectCatalogProductNames(page: Page, language: Language) {
+  for (const productId of ['P001', 'P004'] as const) {
+    const card = productCard(page, productId)
+    await expect(card.getByRole('heading', { name: productNames[language][productId], exact: true })).toBeVisible()
+    await expect(card.getByText(productId, { exact: true })).toBeVisible()
+  }
+}
+
+async function selectLanguage(page: Page, currentLabel: string, language: Language) {
   await page.getByRole('combobox', { name: currentLabel }).selectOption(language)
 }
 
-async function loginWithDemo(page: Page, kind: 'customer' | 'admin', language: 'en' | 'ja' | 'zh-CN') {
+async function expectMonitorNamesAcrossLanguages(page: Page, item: Locator) {
+  await expect(item.getByText('显示器', { exact: true })).toBeVisible()
+  for (const { currentLabel, language } of [
+    { currentLabel: '语言', language: 'en' },
+    { currentLabel: 'Language', language: 'ja' },
+    { currentLabel: '言語', language: 'zh-CN' },
+  ] as const) {
+    await selectLanguage(page, currentLabel, language)
+    await expect(item.getByText(productNames[language].P004, { exact: true })).toBeVisible()
+    await expect(item.getByText('P004', { exact: true })).toBeVisible()
+  }
+}
+
+async function loginWithDemo(page: Page, kind: 'customer' | 'admin', language: Language) {
   const labels = {
     en: { language: 'Language', customer: 'Fill Customer Demo', admin: 'Fill Admin Demo', submit: 'Sign in' },
     ja: { language: '言語', customer: '顧客デモを入力', admin: '管理者デモを入力', submit: 'ログイン' },
@@ -30,30 +62,40 @@ test('public language switching is immediate, persistent, and does not refetch p
   await page.goto('/products')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add to cart' }).first()).toBeVisible()
+  await expectCatalogProductNames(page, 'en')
   const requestsBeforeSwitch = productRequests
 
   await selectLanguage(page, 'Language', 'ja')
   await expect(page.getByRole('heading', { name: '商品一覧' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'カートに追加' }).first()).toBeVisible()
+  await expectCatalogProductNames(page, 'ja')
   await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
   expect(productRequests).toBe(requestsBeforeSwitch)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: '商品一覧' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('ja')
+  await expectCatalogProductNames(page, 'ja')
+  const requestsBeforeChineseSwitch = productRequests
 
   await selectLanguage(page, '言語', 'zh-CN')
   await expect(page.getByRole('heading', { name: '商品列表' })).toBeVisible()
   await expect(page.getByRole('button', { name: '加入购物车' }).first()).toBeVisible()
+  await expectCatalogProductNames(page, 'zh-CN')
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+  expect(productRequests).toBe(requestsBeforeChineseSwitch)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: '商品列表' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: '语言' })).toHaveValue('zh-CN')
+  await expectCatalogProductNames(page, 'zh-CN')
+  const requestsBeforeEnglishSwitch = productRequests
 
   await selectLanguage(page, '语言', 'en')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+  await expectCatalogProductNames(page, 'en')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  expect(productRequests).toBe(requestsBeforeEnglishSwitch)
 })
 
 test('authentication and registration copy localize while demo values stay unchanged', async ({ page }) => {
@@ -74,23 +116,26 @@ test('authentication and registration copy localize while demo values stay uncha
   await expect(page.getByText('密码至少需要 4 个字符。')).toBeVisible()
 })
 
-test('customer cart and order flow stays Chinese without translating business data', async ({ page }) => {
+test('customer cart and order flow retains localized product names', async ({ page }) => {
   await loginWithDemo(page, 'customer', 'zh-CN')
   await expect(page).toHaveURL(/\/products$/)
   await expect(page.getByRole('heading', { name: '商品列表' })).toBeVisible()
 
-  const monitor = page.getByRole('article').filter({ hasText: 'Monitor' })
+  const monitor = productCard(page, 'P004')
+  await expect(monitor.getByRole('heading', { name: '显示器', exact: true })).toBeVisible()
   await monitor.getByRole('button', { name: '加入购物车' }).click()
   await page.getByRole('link', { name: /购物车.*1/ }).click()
   await expect(page.getByRole('heading', { name: '购物车' })).toBeVisible()
-  await expect(page.getByText('Monitor', { exact: true })).toBeVisible()
+  const cartMonitor = productCard(page, 'P004')
+  await expect(cartMonitor.getByRole('spinbutton')).toHaveValue('1')
+  await expectMonitorNamesAcrossLanguages(page, cartMonitor)
+  await expect(cartMonitor.getByRole('spinbutton')).toHaveValue('1')
   await page.getByRole('button', { name: '提交订单' }).click()
 
   await expect(page).toHaveURL(/\/orders$/)
   await expect(page.getByText('订单提交成功。')).toBeVisible()
   await page.getByText('查看下单时的商品信息').last().click()
-  await expect(page.getByText('Monitor').last()).toBeVisible()
-  await expect(page.getByText('P004').last()).toBeVisible()
+  await expectMonitorNamesAcrossLanguages(page, page.getByRole('article').last())
 })
 
 test('admin navigation and locale formatting update immediately', async ({ page }) => {
@@ -104,6 +149,8 @@ test('admin navigation and locale formatting update immediately', async ({ page 
 
   await page.getByRole('link', { name: '商品', exact: true }).click()
   await expect(page.getByRole('heading', { name: '商品管理' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'ノートパソコン', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'モニター', exact: true })).toBeVisible()
   const japanesePrice = await page.evaluate(() => new Intl.NumberFormat('ja-JP', {
     style: 'currency', currency: 'JPY', maximumFractionDigits: 0,
   }).format(120000n))
@@ -112,6 +159,8 @@ test('admin navigation and locale formatting update immediately', async ({ page 
   await selectLanguage(page, '言語', 'zh-CN')
   await expect(page.getByRole('link', { name: '概览' })).toBeVisible()
   await expect(page.getByRole('link', { name: '订单', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '笔记本电脑', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '显示器', exact: true })).toBeVisible()
   const chinesePrice = await page.evaluate(() => new Intl.NumberFormat('zh-CN', {
     style: 'currency', currency: 'JPY', maximumFractionDigits: 0,
   }).format(120000n))
