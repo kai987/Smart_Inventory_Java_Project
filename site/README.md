@@ -4,6 +4,8 @@ This directory is the Cloudflare Worker-compatible deployment surface for Smart 
 
 The hosted database is intentionally separate from the Spring Boot application's CSV files. D1 migrations under `drizzle/` own the schema and are packaged with each saved Sites version. The first request seeds demo products, users, and historical orders only when the migrated database is completely empty. Existing records and intentionally deleted products are not reset or recreated on later cold starts.
 
+The storefront adds 20 demo products (P005–P024) for a 24-product catalog across six categories. This is a versioned, insert-only data expansion outside schema migrations: an atomic D1 batch checks and records its completion marker, skips colliding product IDs, and never overwrites existing inventory or orders. Later cold starts do not restore products deleted after expansion. Shared category metadata and local product photographs power category filtering, price sorting, and responsive product cards without changing the Java/Rust API contract or their local CSV data.
+
 ## Online demo
 
 - GitHub Pages entry: [https://kai987.github.io/Smart_Inventory_Java_Project/](https://kai987.github.io/Smart_Inventory_Java_Project/)

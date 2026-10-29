@@ -16,7 +16,7 @@ type ProductImageProps = {
 }
 
 const imageDimensions: Record<ProductImageVariant, { width: number; height: number }> = {
-  catalog: { width: 112, height: 84 },
+  catalog: { width: 720, height: 540 },
   cart: { width: 72, height: 54 },
   admin: { width: 48, height: 36 },
   order: { width: 44, height: 33 },
@@ -31,7 +31,7 @@ export function ProductImage({
   priority = false,
 }: ProductImageProps) {
   const { t } = useTranslation()
-  const source = getProductImagePath(productId)
+  const source = getProductImagePath(productId, productName)
   const [loadedSource, setLoadedSource] = useState<string | null>(null)
   const [failedSource, setFailedSource] = useState<string | null>(null)
   const accessibleText = alt ?? t('accessibility.productImage', { productName })

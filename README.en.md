@@ -18,6 +18,8 @@ These remain the default Java workflows. An additional [Rust backend](backend-ru
 
 The online version uses the React interface with a **TypeScript/Vinext API and D1 database**. The Rust version remains available for local development and execution; it is not deployed to this Site. GitHub Pages is a redirect-only entry and does not run a Java/Rust server or database.
 
+The online catalog includes 24 demo products across electronics, home, kitchen, travel, sports, and stationery. Browse category cards, combine category/search/stock filters, and sort by price. A one-time, insert-only catalog expansion preserves existing stock and orders; local Java/Rust runtime data and the historical console dataset remain unchanged.
+
 The public demo accounts allow customers to place orders and administrators to modify products and stock. Other visitors can change the shared demo data. No real payments are processed. Do not enter real personal information, real customer data, or passwords reused on other services. See the Demo accounts section below for the published credentials.
 
 ## From console project to full-stack application

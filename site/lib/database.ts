@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { ensureExpandedCatalog } from './catalog-seed';
 
 let databaseReady: Promise<void> | null = null;
 
@@ -20,8 +21,7 @@ const seedProducts = [
   ['P004', 'Monitor', '35000', 6, 5],
 ] as const;
 
-async function initializeDatabase(): Promise<void> {
-  const database = env.DB;
+async function initializeEmptyDatabase(database: D1Database): Promise<void> {
   const state = await database.prepare(`SELECT (${emptyDatabase}) AS is_empty`)
     .first<{ is_empty: number }>();
   if (state?.is_empty !== 1) return;
@@ -76,6 +76,12 @@ async function initializeDatabase(): Promise<void> {
     ),
     database.prepare('DELETE FROM operation_guards WHERE id = ?').bind(guardId),
   ]);
+}
+
+async function initializeDatabase(): Promise<void> {
+  const database = env.DB;
+  await initializeEmptyDatabase(database);
+  await ensureExpandedCatalog(database);
 }
 
 export async function ensureDatabase(): Promise<D1Database> {

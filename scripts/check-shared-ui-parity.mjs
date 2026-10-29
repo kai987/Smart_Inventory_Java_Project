@@ -66,7 +66,10 @@ const mappedScreens = [
   'NotFoundPage.tsx',
   'pages.module.css',
 ]
-const productImages = ['laptop.webp', 'mouse.webp', 'keyboard.webp', 'monitor.webp']
+const productImages = [...new Set((await Promise.all(['frontend', 'site'].map(async (tree) => {
+  const entries = await readdir(resolve(repositoryRoot, tree, 'public/product-images'), { withFileTypes: true })
+  return entries.filter((entry) => entry.isFile()).map((entry) => entry.name)
+}))).flat())].sort()
 const pairs = [
   ...sharedPaths.map((path) => [`frontend/src/${path}`, `site/src/${path}`]),
   ...mappedScreens.map((path) => [`frontend/src/pages/${path}`, `site/src/screens/${path}`]),

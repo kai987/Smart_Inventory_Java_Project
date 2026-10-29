@@ -5,6 +5,7 @@ import type { Product } from '../../api/types'
 import { Button } from '../../components/ui/Button'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import { ProductImage } from './ProductImage'
+import { getProductCategory, productCategoryLabelKeys } from './productCatalog'
 import styles from './products.module.css'
 
 export function ProductList({ products, canAdd, onAdd }: { products: Product[]; canAdd: boolean; onAdd: (product: Product) => void }) {
@@ -54,7 +55,8 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
                 alt=""
                 priority={index < 2}
               />
-              <div>
+              <div className={styles.productHeading}>
+                <p className={styles.productCategory}>{t(productCategoryLabelKeys[getProductCategory(product)])}</p>
                 <h2>{product.name}</h2>
                 <span className={styles.productId}>{product.id}</span>
               </div>

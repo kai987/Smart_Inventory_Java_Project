@@ -10,7 +10,7 @@
 }
 
 .catalog {
-  width: 112px;
+  width: 100%;
   border-radius: 11px;
 }
 
@@ -32,7 +32,7 @@
 .image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0;
   filter: blur(4px);
   transform: scale(0.985);
@@ -49,10 +49,6 @@
   width: 42%;
   height: 42%;
   stroke-width: 1.8;
-}
-
-@media (max-width: 720px) {
-  .catalog { width: 92px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
