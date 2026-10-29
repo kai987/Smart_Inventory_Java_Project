@@ -7,12 +7,12 @@ type ToastTone = 'success' | 'error' | 'info'
 
 type Toast = {
   id: number
-  message: string
+  message: ReactNode
   tone: ToastTone
 }
 
 type ToastContextValue = {
-  showToast: (message: string, tone?: ToastTone) => void
+  showToast: (message: ReactNode, tone?: ToastTone) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -33,7 +33,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const showToast = useCallback(
-    (message: string, tone: ToastTone = 'info') => {
+    (message: ReactNode, tone: ToastTone = 'info') => {
       const id = nextId.current
       nextId.current += 1
       setToasts((current) => [...current, { id, message, tone }])

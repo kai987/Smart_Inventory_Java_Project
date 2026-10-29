@@ -18,6 +18,8 @@ import { Button } from '../components/ui/Button'
 import { Dialog } from '../components/ui/Dialog'
 import { Field } from '../components/ui/Field'
 import { ProductImage } from '../features/products/ProductImage'
+import { matchesProductSearch } from '../features/products/productCatalog'
+import { useProductNames } from '../features/products/useProductNames'
 import { translateApiError, translateApiFieldError } from '../i18n/apiErrorLocalization'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
@@ -141,6 +143,7 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
 
 function StockDialog({ product, onClose, onUpdated }: { product: Product | null; onClose: () => void; onUpdated: () => void }) {
   const { t, i18n } = useTranslation()
+  const productName = useProductNames()
   const { user, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const resolvedLanguage = i18n.resolvedLanguage
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
@@ -181,7 +184,7 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
     <Dialog
       open={product !== null}
       title={t('admin.updateStock')}
-      description={product === null ? undefined : t('admin.productIdentity', { productName: product.name, productId: product.id })}
+      description={product === null ? undefined : t('admin.productIdentity', { productName: productName(product.id, product.name), productId: product.id })}
       onClose={onClose}
     >
       <form onSubmit={submit} noValidate>
@@ -200,6 +203,7 @@ function StockDialog({ product, onClose, onUpdated }: { product: Product | null;
 
 export default function AdminProductsPage() {
   const { t } = useTranslation()
+  const productName = useProductNames()
   const { user, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const { formatNumber, formatWeight, formatYen } = useLocaleFormatters()
   const [search, setSearch] = useState('')
@@ -211,10 +215,14 @@ export default function AdminProductsPage() {
   const { showToast } = useToast()
   useLocalizedDocumentTitle('admin.productManagementTitle')
   const products = useQuery({
-    queryKey: queryKeys.products({ q: deferredSearch, inStockOnly: false }),
-    queryFn: ({ signal }) => productApi.list({ q: deferredSearch, inStockOnly: false }, signal),
+    queryKey: queryKeys.products({ q: '', inStockOnly: false }),
+    queryFn: ({ signal }) => productApi.list({ q: '', inStockOnly: false }, signal),
     placeholderData: (previous) => previous,
   })
+  const filteredProducts = useMemo(
+    () => (products.data?.items ?? []).filter((product) => matchesProductSearch(product, deferredSearch)),
+    [products.data, deferredSearch],
+  )
   const summary = useQuery({
     queryKey: queryKeys.adminSummary(user?.username ?? ''),
     queryFn: ({ signal }) => runProtectedRequest((scope) => adminApi.summary(AbortSignal.any([signal, scope]))),
@@ -263,13 +271,14 @@ export default function AdminProductsPage() {
       </div>
       {products.isLoading ? <SkeletonRows /> : null}
       {products.isError ? <ErrorState message={t('admin.productLoadError')} onRetry={() => void products.refetch()} /> : null}
-      {products.data?.items.length === 0 ? <EmptyState title={t('admin.noProductsTitle')} description={t('admin.noProductsDescription')} /> : null}
-      {products.data !== undefined && products.data.items.length > 0 ? (
+      {products.data !== undefined && filteredProducts.length === 0 ? <EmptyState title={t('admin.noProductsTitle')} description={t('admin.noProductsDescription')} /> : null}
+      {filteredProducts.length > 0 ? (
         <div className={styles.tableSurface}>
           <table className={styles.table}>
             <thead><tr><th>{t('admin.productId')}</th><th>{t('admin.productName')}</th><th>{t('admin.price')}</th><th>{t('admin.stock')}</th><th>{t('admin.weight')}</th><th>{t('admin.status')}</th><th>{t('admin.actions')}</th></tr></thead>
             <tbody>
-              {products.data.items.map((product) => {
+              {filteredProducts.map((product) => {
+                const displayName = productName(product.id, product.name)
                 const lowStockThreshold = summary.data?.lowStockThreshold ?? 5
                 const status = product.stock === 0 ? t('admin.outOfStock') : product.stock <= lowStockThreshold ? t('admin.lowStock') : t('admin.inStock')
                 const statusClass = product.stock === 0 ? styles.statusOut : product.stock <= lowStockThreshold ? styles.statusLow : ''
@@ -279,7 +288,7 @@ export default function AdminProductsPage() {
                     <td className={styles.nameCell}>
                       <div className={styles.productIdentity}>
                         <ProductImage productId={product.id} productName={product.name} variant="admin" alt="" />
-                        <span>{product.name}</span>
+                        <span>{displayName}</span>
                       </div>
                     </td>
                     <td>{formatYen(product.priceYen)}</td>
@@ -287,8 +296,8 @@ export default function AdminProductsPage() {
                     <td>{formatWeight(product.weightKg)}</td>
                     <td><span className={`${styles.status} ${statusClass}`}>{status}</span></td>
                     <td><div className={styles.rowActions}>
-                      <button type="button" onClick={() => setStockProduct(product)} aria-label={t('admin.updateStockFor', { productName: product.name })}><Pencil /></button>
-                      <button type="button" onClick={() => setDeleteProduct(product)} aria-label={t('admin.deleteProductNamed', { productName: product.name })}><Trash2 /></button>
+                      <button type="button" onClick={() => setStockProduct(product)} aria-label={t('admin.updateStockFor', { productName: displayName })}><Pencil /></button>
+                      <button type="button" onClick={() => setDeleteProduct(product)} aria-label={t('admin.deleteProductNamed', { productName: displayName })}><Trash2 /></button>
                     </div></td>
                   </tr>
                 )
@@ -306,7 +315,7 @@ export default function AdminProductsPage() {
         description={t('admin.deleteProductDescription')}
         onClose={() => setDeleteProduct(null)}
       >
-        <div className={pageStyles.dialogBody}><p>{t('admin.deleteProductQuestion', { productName: deleteProduct?.name ?? '', productId: deleteProduct?.id ?? '' })}</p></div>
+        <div className={pageStyles.dialogBody}><p>{t('admin.deleteProductQuestion', { productName: deleteProduct === null ? '' : productName(deleteProduct.id, deleteProduct.name), productId: deleteProduct?.id ?? '' })}</p></div>
         <div className={pageStyles.dialogActions}>
           <Button type="button" variant="secondary" onClick={() => setDeleteProduct(null)} disabled={deleteMutation.isPending}>{t('common.cancel')}</Button>
           <Button type="button" variant="danger" onClick={() => { if (deleteProduct !== null) deleteMutation.mutate(deleteProduct.id) }} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? t('admin.deleting') : t('admin.deleteProduct')}</Button>

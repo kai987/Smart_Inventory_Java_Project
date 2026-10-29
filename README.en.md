@@ -20,6 +20,8 @@ The online version uses the React interface with a **TypeScript/Vinext API and D
 
 The online catalog includes 24 demo products across electronics, home, kitchen, travel, sports, and stationery. Browse category cards, combine category/search/stock filters, and sort by price. A one-time, insert-only catalog expansion preserves existing stock and orders; local Java/Rust runtime data and the historical console dataset remain unchanged.
 
+All 24 standard product names follow the selected English, Japanese, or Simplified Chinese interface language across the catalog, cart, saved orders, and admin screens. Search accepts names in all three languages as well as product IDs. Localization is display-only: stored names, historical snapshots, prices, and stock remain unchanged, and custom or renamed products retain their original names.
+
 The public demo accounts allow customers to place orders and administrators to modify products and stock. Other visitors can change the shared demo data. No real payments are processed. Do not enter real personal information, real customer data, or passwords reused on other services. See the Demo accounts section below for the published credentials.
 
 ## From console project to full-stack application

@@ -16,6 +16,8 @@ import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/Que
 import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
 import { ProductImage } from '../features/products/ProductImage'
+import { ProductToastMessage } from '../features/products/ProductToastMessage'
+import { useProductNames } from '../features/products/useProductNames'
 import { translateApiError } from '../i18n/apiErrorLocalization'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
@@ -37,6 +39,7 @@ type CheckoutSubmission = {
 
 export function CartPage() {
   const { t } = useTranslation()
+  const productName = useProductNames()
   const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
   const { state, dispatch, consumeOrder } = useCart()
   const { user, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
@@ -68,13 +71,10 @@ export function CartPage() {
       const product = productMap.get(item.productId)
       if (product !== undefined && product.stock > 0 && item.quantity > product.stock) {
         dispatch({ type: 'setQuantity', productId: item.productId, quantity: product.stock })
-        showToast(t('cart.stockAdjusted', {
-          productName: product.name,
-          stock: formatNumber(product.stock),
-        }), 'info')
+        showToast(<ProductToastMessage kind="stockAdjusted" productId={product.id} originalName={product.name} stock={product.stock} />, 'info')
       }
     }
-  }, [dispatch, formatNumber, productMap, products.data, showToast, state.items, t, user])
+  }, [dispatch, productMap, products.data, showToast, state.items, user])
 
   const resolvedItems = state.items.map((cartItem) => ({ cartItem, product: productMap.get(cartItem.productId) }))
   const hasUnavailable = resolvedItems.some(({ product }) => product === undefined || product.stock === 0)
@@ -188,6 +188,7 @@ export function CartPage() {
           <section className={orderStyles.cartList} aria-label={t('cart.itemsLabel')}>
             {resolvedItems.map(({ cartItem, product }, itemIndex) => {
               const unavailable = product === undefined || product.stock === 0
+              const displayName = product === undefined ? cartItem.productId : productName(product.id, product.name)
               const hasQuantityError = invalidQuantityIds.has(cartItem.productId)
               const quantityErrorId = `cart-quantity-error-${itemIndex}`
               return (
@@ -200,7 +201,7 @@ export function CartPage() {
                       alt=""
                     />
                     <div>
-                      <strong>{product?.name ?? t('cart.unavailableProduct')}</strong>
+                      <strong>{product === undefined ? t('cart.unavailableProduct') : displayName}</strong>
                       <span>{cartItem.productId}</span>
                       {unavailable
                         ? <span className={orderStyles.unavailableText}>{t(canReplayOrder ? 'cart.awaitingConfirmation' : 'cart.removeUnavailable')}</span>
@@ -208,7 +209,7 @@ export function CartPage() {
                     </div>
                   </div>
                   <div className={orderStyles.quantityField}>
-                    <div className={orderStyles.quantityControl} aria-label={t('cart.quantityFor', { productName: product?.name ?? cartItem.productId })}>
+                    <div className={orderStyles.quantityControl} aria-label={t('cart.quantityFor', { productName: displayName })}>
                       <button type="button" disabled={placeOrder.isPending} onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'decrement', productId: cartItem.productId }) }} aria-label={t('cart.decreaseQuantity')}><Minus /></button>
                       <input
                         type="number"
@@ -218,7 +219,7 @@ export function CartPage() {
                         value={quantityDrafts.get(cartItem.productId) ?? cartItem.quantity}
                         disabled={unavailable || placeOrder.isPending}
                         onChange={(event) => handleQuantityChange(cartItem.productId, event.target.value, product?.stock)}
-                        aria-label={t('cart.quantityFor', { productName: product?.name ?? cartItem.productId })}
+                        aria-label={t('cart.quantityFor', { productName: displayName })}
                         aria-invalid={hasQuantityError || undefined}
                         aria-describedby={hasQuantityError ? quantityErrorId : undefined}
                       />
@@ -235,7 +236,7 @@ export function CartPage() {
                     <span>{t('cart.subtotal')}</span>
                     <strong>{product === undefined ? '—' : formatYen(multiplyYen(product.priceYen, cartItem.quantity))}</strong>
                   </div>
-                  <button className={orderStyles.removeButton} type="button" disabled={placeOrder.isPending} onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'remove', productId: cartItem.productId }) }} aria-label={t('cart.removeItem', { productName: product?.name ?? cartItem.productId })}><Trash2 /></button>
+                  <button className={orderStyles.removeButton} type="button" disabled={placeOrder.isPending} onClick={() => { clearQuantityInputState(cartItem.productId); dispatch({ type: 'remove', productId: cartItem.productId }) }} aria-label={t('cart.removeItem', { productName: displayName })}><Trash2 /></button>
                 </article>
               )
             })}

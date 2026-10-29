@@ -6,6 +6,7 @@ import { orderApi } from '../api/orderApi'
 import { queryKeys } from '../app/queryClient'
 import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
+import { useProductNames } from '../features/products/useProductNames'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
 import styles from '../features/admin/admin.module.css'
@@ -13,6 +14,7 @@ import pageStyles from './pages.module.css'
 
 export default function AdminOrdersPage() {
   const { t } = useTranslation()
+  const productName = useProductNames()
   const { user, runProtectedRequest, isChangingSession } = useAuth()
   const { formatNumber, formatWeight, formatYen } = useLocaleFormatters()
   const [customer, setCustomer] = useState('')
@@ -52,7 +54,7 @@ export default function AdminOrdersPage() {
               <div className={styles.adminOrderItems}>
                 {order.items.map((item) => (
                   <div className={styles.adminOrderItem} key={item.productId}>
-                    <div><span>{t('admin.product')}</span><strong>{item.productName} · {item.productId}</strong></div>
+                    <div><span>{t('admin.product')}</span><strong>{productName(item.productId, item.productName)} · {item.productId}</strong></div>
                     <div><span>{t('admin.unitPrice')}</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
                     <div><span>{t('admin.quantity')}</span><strong>{formatNumber(item.quantity)}</strong></div>
                     <div><span>{t('admin.subtotal')}</span><strong>{formatYen(item.subtotalYen)}</strong></div>

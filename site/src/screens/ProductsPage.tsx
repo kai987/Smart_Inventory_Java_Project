@@ -12,7 +12,8 @@ import { useToast } from '../components/feedback/ToastProvider'
 import { Button } from '../components/ui/Button'
 import { Switch } from '../components/ui/Switch'
 import { ProductList } from '../features/products/ProductList'
-import { productCategories, productCategoryLabelKeys, selectCatalogProducts, type ProductCategoryFilter, type ProductSort } from '../features/products/productCatalog'
+import { ProductToastMessage } from '../features/products/ProductToastMessage'
+import { matchesProductSearch, productCategories, productCategoryLabelKeys, selectCatalogProducts, type ProductCategoryFilter, type ProductSort } from '../features/products/productCatalog'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
 import styles from './pages.module.css'
@@ -30,11 +31,13 @@ export function ProductsPage() {
   const { showToast } = useToast()
   useLocalizedDocumentTitle('products.title')
   const products = useQuery({
-    queryKey: queryKeys.products({ q: deferredSearch, inStockOnly }),
-    queryFn: ({ signal }) => productApi.list({ q: deferredSearch, inStockOnly }, signal),
+    queryKey: queryKeys.products({ q: '', inStockOnly: false }),
+    queryFn: ({ signal }) => productApi.list({ q: '', inStockOnly: false }, signal),
     placeholderData: (previous) => previous,
   })
-  const visibleProducts = selectCatalogProducts(products.data?.items ?? [], category, sort)
+  const matchingProducts = (products.data?.items ?? []).filter((product) =>
+    (!inStockOnly || product.stock > 0) && matchesProductSearch(product, deferredSearch))
+  const visibleProducts = selectCatalogProducts(matchingProducts, category, sort)
   const hasFilters = search !== '' || inStockOnly || category !== 'all' || sort !== 'default'
 
   const resetFilters = () => {
@@ -46,7 +49,7 @@ export function ProductsPage() {
 
   const handleAdd = (product: Product) => {
     dispatch({ type: 'add', productId: product.id })
-    showToast(t('products.addedToCart', { productName: product.name }), 'success')
+    showToast(<ProductToastMessage kind="added" productId={product.id} originalName={product.name} />, 'success')
   }
 
   return (

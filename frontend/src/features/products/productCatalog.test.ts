@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Product } from '../../api/types'
-import { getProductCategory, selectCatalogProducts, type ProductCategory } from './productCatalog'
+import { getLocalizedProductName, getProductCategory, matchesProductSearch, selectCatalogProducts, type ProductCategory } from './productCatalog'
 
 const coreProducts: [string, string, ProductCategory][] = [
   ['P001', 'Laptop', 'electronics'], ['P002', 'Mouse', 'electronics'],
@@ -15,6 +15,33 @@ const coreProducts: [string, string, ProductCategory][] = [
   ['P019', 'Jump Rope', 'sports'], ['P020', 'Basketball', 'sports'],
   ['P021', 'Notebook Set', 'stationery'], ['P022', 'Gel Pen Set', 'stationery'],
   ['P023', 'Desk Organizer', 'stationery'], ['P024', 'Pencil Case', 'stationery'],
+]
+
+const localizedProducts: [string, string, string, string][] = [
+  ['P001', 'Laptop', '笔记本电脑', 'ノートパソコン'],
+  ['P002', 'Mouse', '鼠标', 'マウス'],
+  ['P003', 'Keyboard', '键盘', 'キーボード'],
+  ['P004', 'Monitor', '显示器', 'モニター'],
+  ['P005', 'Desk Lamp', '台灯', 'デスクライト'],
+  ['P006', 'Robot Vacuum', '扫地机器人', 'ロボット掃除機'],
+  ['P007', 'Desk Fan', '桌面风扇', '卓上扇風機'],
+  ['P008', 'Digital Alarm Clock', '电子闹钟', 'デジタル目覚まし時計'],
+  ['P009', 'Electric Kettle', '电热水壶', '電気ケトル'],
+  ['P010', 'Frying Pan', '平底锅', 'フライパン'],
+  ['P011', 'Stainless Steel Bottle', '不锈钢水瓶', 'ステンレスボトル'],
+  ['P012', 'Digital Kitchen Scale', '电子厨房秤', 'デジタルキッチンスケール'],
+  ['P013', 'Travel Backpack', '旅行背包', 'トラベルバックパック'],
+  ['P014', 'Cabin Suitcase', '登机行李箱', '機内持ち込みスーツケース'],
+  ['P015', 'Compact Umbrella', '折叠雨伞', '折りたたみ傘'],
+  ['P016', 'Toiletry Bag', '洗漱包', 'トイレタリーポーチ'],
+  ['P017', 'Yoga Mat', '瑜伽垫', 'ヨガマット'],
+  ['P018', 'Dumbbell Set', '哑铃套装', 'ダンベルセット'],
+  ['P019', 'Jump Rope', '跳绳', '縄跳び'],
+  ['P020', 'Basketball', '篮球', 'バスケットボール'],
+  ['P021', 'Notebook Set', '笔记本套装', 'ノートセット'],
+  ['P022', 'Gel Pen Set', '中性笔套装', 'ゲルインクペンセット'],
+  ['P023', 'Desk Organizer', '桌面收纳盒', 'デスクオーガナイザー'],
+  ['P024', 'Pencil Case', '笔袋', 'ペンケース'],
 ]
 
 const product = (id: string, name: string, priceYen = '1000'): Product => ({ id, name, priceYen, stock: 5, weightKg: 1, available: true })
@@ -33,6 +60,49 @@ describe('productCatalog', () => {
     expect(getProductCategory({ id: 'P001', name: 'Custom workstation' })).toBe('other')
     expect(getProductCategory({ id: 'P001', name: 'Desk Lamp' })).toBe('other')
     expect(getProductCategory({ id: 'toString', name: 'Laptop' })).toBe('other')
+  })
+
+  it.each(localizedProducts)('localizes %s in all three languages without modifying source data', (id, name, zhName, jaName) => {
+    const original = Object.freeze({ id, name })
+    expect(getLocalizedProductName(id, name, 'en')).toBe(name)
+    expect(getLocalizedProductName(id, name, 'zh-CN')).toBe(zhName)
+    expect(getLocalizedProductName(id, name, 'ja')).toBe(jaName)
+    expect(original).toEqual({ id, name })
+  })
+
+  it('preserves the exact original name for unknown, renamed, and conflicting products', () => {
+    for (const language of ['en', 'ja', 'zh-CN'] as const) {
+      expect(getLocalizedProductName('CUSTOM-1', ' Laptop ', language)).toBe(' Laptop ')
+      expect(getLocalizedProductName('P001', 'Custom workstation', language)).toBe('Custom workstation')
+      expect(getLocalizedProductName('P001', 'Desk Lamp', language)).toBe('Desk Lamp')
+      expect(getLocalizedProductName('toString', 'Laptop', language)).toBe('Laptop')
+      expect(getLocalizedProductName('P005', '台灯', language)).toBe('台灯')
+    }
+    expect(getLocalizedProductName(' p001 ', ' LAPTOP ', 'en')).toBe('Laptop')
+    expect(getLocalizedProductName(' p001 ', ' LAPTOP ', 'ja')).toBe('ノートパソコン')
+  })
+
+  it.each(localizedProducts)('searches %s using its ID and every localized name', (id, name, zhName, jaName) => {
+    const original = Object.freeze({ id, name })
+    for (const query of [id.toLowerCase(), name.toUpperCase(), zhName, jaName, zhName.slice(1), jaName.slice(1)]) {
+      expect(matchesProductSearch(original, query)).toBe(true)
+    }
+    expect(matchesProductSearch(original, 'not-a-product')).toBe(false)
+  })
+
+  it('normalizes width, case, and surrounding whitespace for fuzzy search', () => {
+    expect(matchesProductSearch({ id: 'P001', name: 'Laptop' }, '  ｐ００１  ')).toBe(true)
+    expect(matchesProductSearch({ id: 'P001', name: 'Laptop' }, 'ＬＡＰ')).toBe(true)
+    expect(matchesProductSearch({ id: 'P005', name: 'Desk Lamp' }, 'ﾃﾞｽｸ')).toBe(true)
+    expect(matchesProductSearch({ id: 'P001', name: 'Laptop' }, '   ')).toBe(true)
+  })
+
+  it('never gives renamed or ID-conflicting products stale translated search aliases', () => {
+    expect(matchesProductSearch({ id: 'P001', name: 'Custom workstation' }, '笔记本电脑')).toBe(false)
+    expect(matchesProductSearch({ id: 'P001', name: 'Desk Lamp' }, 'ノートパソコン')).toBe(false)
+    expect(matchesProductSearch({ id: 'CUSTOM-1', name: 'Laptop' }, '笔记本电脑')).toBe(false)
+    expect(matchesProductSearch({ id: 'CUSTOM-1', name: 'Custom workstation' }, 'WORKSTATION')).toBe(true)
+    expect(matchesProductSearch({ id: 'P001', name: 'Custom workstation' }, 'p001')).toBe(true)
   })
 
   it('filters categories while retaining server order', () => {

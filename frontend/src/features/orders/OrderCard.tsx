@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next'
 import type { Order } from '../../api/types'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import { ProductImage } from '../products/ProductImage'
+import { useProductNames } from '../products/useProductNames'
 import styles from './orders.module.css'
 
 export function OrderCard({ order }: { order: Order }) {
   const { t } = useTranslation()
+  const productName = useProductNames()
   const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
 
   return (
@@ -29,7 +31,7 @@ export function OrderCard({ order }: { order: Order }) {
           {order.items.map((item) => (
             <div className={styles.snapshot} key={item.productId}>
               <ProductImage productId={item.productId} productName={item.productName} variant="order" alt="" />
-              <div className={styles.snapshotName}><strong>{item.productName}</strong><span>{item.productId}</span></div>
+              <div className={styles.snapshotName}><strong>{productName(item.productId, item.productName)}</strong><span>{item.productId}</span></div>
               <div><span>{t('orders.unitPrice')}</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
               <div><span>{t('orders.quantity')}</span><strong>{formatNumber(item.quantity)}</strong></div>
               <div><span>{t('orders.subtotal')}</span><strong>{formatYen(item.subtotalYen)}</strong></div>

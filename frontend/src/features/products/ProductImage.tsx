@@ -2,6 +2,7 @@ import { Package } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getProductImagePath } from './productImages'
+import { useProductNames } from './useProductNames'
 import styles from './ProductImage.module.css'
 
 export type ProductImageVariant = 'catalog' | 'cart' | 'admin' | 'order'
@@ -31,10 +32,11 @@ export function ProductImage({
   priority = false,
 }: ProductImageProps) {
   const { t } = useTranslation()
+  const localizedName = useProductNames()
   const source = getProductImagePath(productId, productName)
   const [loadedSource, setLoadedSource] = useState<string | null>(null)
   const [failedSource, setFailedSource] = useState<string | null>(null)
-  const accessibleText = alt ?? t('accessibility.productImage', { productName })
+  const accessibleText = alt ?? t('accessibility.productImage', { productName: localizedName(productId, productName) })
   const dimensions = imageDimensions[variant]
   const frameClassName = `${styles.frame} ${styles[variant]} ${className}`
   const shouldShowFallback = source === null || failedSource === source

@@ -6,10 +6,12 @@ import { Button } from '../../components/ui/Button'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import { ProductImage } from './ProductImage'
 import { getProductCategory, productCategoryLabelKeys } from './productCatalog'
+import { useProductNames } from './useProductNames'
 import styles from './products.module.css'
 
 export function ProductList({ products, canAdd, onAdd }: { products: Product[]; canAdd: boolean; onAdd: (product: Product) => void }) {
   const { t } = useTranslation()
+  const productName = useProductNames()
   const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
   const [addedProductIds, setAddedProductIds] = useState<ReadonlySet<string>>(() => new Set())
   const feedbackTimers = useRef(new Map<string, number>())
@@ -57,7 +59,7 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
               />
               <div className={styles.productHeading}>
                 <p className={styles.productCategory}>{t(productCategoryLabelKeys[getProductCategory(product)])}</p>
-                <h2>{product.name}</h2>
+                <h2>{productName(product.id, product.name)}</h2>
                 <span className={styles.productId}>{product.id}</span>
               </div>
             </div>

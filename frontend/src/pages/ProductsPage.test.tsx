@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Product } from '../api/types'
 import { productApi } from '../api/productApi'
 import { useCart } from '../cart/CartProvider'
+import { LanguageSelect } from '../i18n/LanguageSelect'
 import { renderWithProviders } from '../test/render'
 import { ProductsPage } from './ProductsPage'
 
@@ -12,8 +13,11 @@ const lamp: Product = { id: 'P005', name: 'Desk Lamp', priceYen: '3600', stock: 
 const customProduct: Product = { id: 'CUSTOM-1', name: 'Custom product with a complete, descriptive name', priceYen: '1500', stock: 0, weightKg: 0.4, available: true }
 
 function CartCount() {
-  const { itemCount } = useCart()
-  return <output aria-label="Test cart count">{itemCount}</output>
+  const { itemCount, state } = useCart()
+  return <>
+    <output aria-label="Test cart count">{itemCount}</output>
+    <output aria-label="Test cart product IDs">{state.items.map((item) => item.productId).join(',')}</output>
+  </>
 }
 
 describe('ProductsPage', () => {
@@ -81,11 +85,7 @@ describe('ProductsPage', () => {
 
   it('combines category, search, and stock filters, and resets every control from the empty state', async () => {
     const items = [laptop, lamp, customProduct]
-    vi.spyOn(productApi, 'list').mockImplementation(({ q, inStockOnly } = {}) => {
-      const normalized = q?.toLowerCase() ?? ''
-      const filtered = items.filter((item) => (!inStockOnly || item.stock > 0) && `${item.id} ${item.name}`.toLowerCase().includes(normalized))
-      return Promise.resolve({ items: filtered, total: filtered.length })
-    })
+    const list = vi.spyOn(productApi, 'list').mockResolvedValue({ items, total: items.length })
     renderWithProviders(<ProductsPage />)
     const user = userEvent.setup()
     await screen.findByRole('heading', { name: 'Laptop' })
@@ -101,22 +101,68 @@ describe('ProductsPage', () => {
     expect(screen.getByRole('checkbox', { name: 'In stock only' })).not.toBeChecked()
     expect(screen.getByLabelText('Sort by')).toHaveValue('default')
     expect(screen.getByRole('button', { name: 'All products' })).toHaveAttribute('aria-pressed', 'true')
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledWith({ q: '', inStockOnly: false }, expect.any(AbortSignal))
   })
 
   it.each([
-    { language: 'en', category: 'Electronics', sort: 'Sort by', reset: 'Reset filters', credits: 'Image credits' },
-    { language: 'ja', category: '電子機器', sort: '並び順', reset: '条件をリセット', credits: '画像の出典' },
-    { language: 'zh-CN', category: '电子产品', sort: '排序方式', reset: '重置筛选', credits: '图片来源' },
-  ] as const)('localizes catalog controls in $language without translating business names', async ({ language, category, sort, reset, credits }) => {
-    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
+    { language: 'en', name: 'Laptop', category: 'Electronics', sort: 'Sort by', reset: 'Reset filters', credits: 'Image credits' },
+    { language: 'ja', name: 'ノートパソコン', category: '電子機器', sort: '並び順', reset: '条件をリセット', credits: '画像の出典' },
+    { language: 'zh-CN', name: '笔记本电脑', category: '电子产品', sort: '排序方式', reset: '重置筛选', credits: '图片来源' },
+  ] as const)('localizes standard product names and catalog controls in $language', async ({ language, name, category, sort, reset, credits }) => {
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop, customProduct], total: 2 })
     renderWithProviders(<ProductsPage />, { language })
     const user = userEvent.setup()
-    expect(await screen.findByRole('heading', { name: 'Laptop' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: customProduct.name })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: category }))
     expect(screen.getByLabelText(sort)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: reset })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: credits })).toHaveAttribute('href', '/product-images/CREDITS.md')
     expect(screen.getByRole('link', { name: credits })).toHaveAttribute('rel', 'noreferrer')
+  })
+
+  it.each(['笔记本', 'ノートパソ', 'LAP', 'ｐ００１'])('finds products with multilingual fuzzy query %s in the English interface', async (query) => {
+    const list = vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop, lamp], total: 2 })
+    renderWithProviders(<ProductsPage />)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: 'Laptop' })
+    await user.type(screen.getByRole('searchbox'), query)
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(screen.getByRole('heading', { name: 'Laptop' })).toBeInTheDocument()
+    expect(screen.getByText('1 product')).toBeInTheDocument()
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('changes displayed names and add-to-cart feedback without changing original data, filters, images, or cart IDs', async () => {
+    const items = [Object.freeze({ ...laptop }), Object.freeze({ ...lamp })]
+    const list = vi.spyOn(productApi, 'list').mockResolvedValue({ items, total: 2 })
+    const { container } = renderWithProviders(<><LanguageSelect /><ProductsPage /><CartCount /></>)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: 'Desk Lamp' })
+    await user.type(screen.getByRole('searchbox'), '台灯')
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Language' }), 'ja')
+    expect(await screen.findByRole('heading', { name: 'デスクライト' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('台灯')
+    expect(container.querySelector('article img')).toHaveAttribute('src', '/product-images/desk-lamp.webp')
+    await user.click(screen.getByRole('button', { name: 'カートに追加' }))
+    expect(screen.getByText('デスクライトをカートに追加しました。')).toBeInTheDocument()
+    expect(screen.getByLabelText('Test cart product IDs')).toHaveTextContent('P005')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '言語' }), 'zh-CN')
+    expect(await screen.findByRole('heading', { name: '台灯' })).toBeInTheDocument()
+    expect(screen.getByText('已将 台灯 加入购物车。')).toBeInTheDocument()
+    expect(screen.queryByText('デスクライトをカートに追加しました。')).not.toBeInTheDocument()
+    expect(container.querySelector('article img')).toHaveAttribute('src', '/product-images/desk-lamp.webp')
+    await user.selectOptions(screen.getByRole('combobox', { name: '语言' }), 'en')
+    expect(await screen.findByRole('heading', { name: 'Desk Lamp' })).toBeInTheDocument()
+    expect(screen.getByText('Desk Lamp added to your cart.')).toBeInTheDocument()
+    expect(screen.queryByText('已将 台灯 加入购物车。')).not.toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('台灯')
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledWith({ q: '', inStockOnly: false }, expect.any(AbortSignal))
+    expect(items.map((item) => ({ id: item.id, name: item.name }))).toEqual([{ id: 'P001', name: 'Laptop' }, { id: 'P005', name: 'Desk Lamp' }])
   })
 
   it('preserves the administrator read-only catalog experience', async () => {

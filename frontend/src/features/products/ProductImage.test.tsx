@@ -1,27 +1,52 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import { I18nProvider } from '../../i18n/I18nProvider'
+import { createI18nInstance } from '../../i18n/i18n'
+import type { AppLanguage } from '../../i18n/language'
 import { ProductImage } from './ProductImage'
 import styles from './ProductImage.module.css'
 import { getProductImagePath } from './productImages'
 
+function renderProductImage(ui: ReactElement, language: AppLanguage = 'en') {
+  const instance = createI18nInstance(language)
+  const wrapper = ({ children }: { children: ReactNode }) => <I18nProvider instance={instance}>{children}</I18nProvider>
+  return render(ui, { wrapper })
+}
+
 describe('ProductImage', () => {
   it('maps P001 to the local laptop image', () => {
-    render(<ProductImage productId="P001" productName="Laptop" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P001" productName="Laptop" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Laptop product' })).toHaveAttribute('src', '/product-images/laptop.webp')
   })
 
+  it.each([
+    ['ja', 'ノートパソコンの商品画像'],
+    ['zh-CN', '笔记本电脑 的商品图片'],
+  ] as const)('localizes the default accessible name in %s without losing the photograph', (language, label) => {
+    renderProductImage(<ProductImage productId="P001" productName="Laptop" variant="catalog" />, language)
+    expect(screen.getByRole('img', { name: label })).toHaveAttribute('src', '/product-images/laptop.webp')
+  })
+
+  it('preserves explicit alternative text and decorative image semantics', () => {
+    const { rerender, container } = renderProductImage(<ProductImage productId="P001" productName="Laptop" variant="catalog" alt="Custom description" />)
+    expect(screen.getByRole('img', { name: 'Custom description' })).toHaveAttribute('src', '/product-images/laptop.webp')
+    rerender(<ProductImage productId="P001" productName="Laptop" variant="catalog" alt="" />)
+    expect(container.querySelector('img')).toHaveAttribute('alt', '')
+  })
+
   it('maps P002 to the local mouse image', () => {
-    render(<ProductImage productId="P002" productName="Mouse" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P002" productName="Mouse" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Mouse product' })).toHaveAttribute('src', '/product-images/mouse.webp')
   })
 
   it('maps P003 to the local keyboard image', () => {
-    render(<ProductImage productId="P003" productName="Keyboard" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P003" productName="Keyboard" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Keyboard product' })).toHaveAttribute('src', '/product-images/keyboard.webp')
   })
 
   it('maps P004 to the local monitor image', () => {
-    render(<ProductImage productId="P004" productName="Monitor" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P004" productName="Monitor" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Monitor product' })).toHaveAttribute('src', '/product-images/monitor.webp')
   })
 
@@ -47,7 +72,7 @@ describe('ProductImage', () => {
     ['P023', 'Desk Organizer', 'desk-organizer'],
     ['P024', 'Pencil Case', 'pencil-case'],
   ])('maps %s to its matching local catalog photograph', (productId, productName, basename) => {
-    render(<ProductImage productId={productId} productName={productName} variant="catalog" />)
+    renderProductImage(<ProductImage productId={productId} productName={productName} variant="catalog" />)
     const image = screen.getByRole('img', { name: `${productName} product` })
     expect(image).toHaveAttribute('src', `/product-images/${basename}.webp`)
     expect(image).toHaveAttribute('width', '720')
@@ -61,12 +86,12 @@ describe('ProductImage', () => {
 
   it('does not apply a catalog photograph to a custom product reusing a catalog ID', () => {
     expect(getProductImagePath('P005', 'Custom Handmade Mug')).toBeNull()
-    render(<ProductImage productId="P005" productName="Custom Handmade Mug" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P005" productName="Custom Handmade Mug" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Custom Handmade Mug product' })).not.toBeInstanceOf(HTMLImageElement)
   })
 
   it('preserves compact dimensions outside the catalog', () => {
-    const { rerender } = render(<ProductImage productId="P002" productName="Mouse" variant="cart" />)
+    const { rerender } = renderProductImage(<ProductImage productId="P002" productName="Mouse" variant="cart" />)
     expect(screen.getByRole('img', { name: 'Mouse product' })).toHaveAttribute('width', '72')
     rerender(<ProductImage productId="P002" productName="Mouse" variant="admin" />)
     expect(screen.getByRole('img', { name: 'Mouse product' })).toHaveAttribute('width', '48')
@@ -75,14 +100,14 @@ describe('ProductImage', () => {
   })
 
   it('shows a stable fallback for an unknown product ID', () => {
-    render(<ProductImage productId="P999" productName="Unknown" variant="cart" />)
+    renderProductImage(<ProductImage productId="P999" productName="Unknown" variant="cart" />)
     const fallback = screen.getByRole('img', { name: 'Unknown product' })
     expect(fallback).not.toBeInstanceOf(HTMLImageElement)
     expect(fallback).toHaveAttribute('data-variant', 'cart')
   })
 
   it('replaces an image with the fallback after a load error', () => {
-    render(<ProductImage productId="P001" productName="Laptop" variant="catalog" />)
+    renderProductImage(<ProductImage productId="P001" productName="Laptop" variant="catalog" />)
     fireEvent.error(screen.getByRole('img', { name: 'Laptop product' }))
     const fallback = screen.getByRole('img', { name: 'Laptop product' })
     expect(fallback).not.toBeInstanceOf(HTMLImageElement)
@@ -90,14 +115,14 @@ describe('ProductImage', () => {
   })
 
   it('never renders an external image URL', () => {
-    const { container, rerender } = render(<ProductImage productId="P004" productName="Monitor" variant="admin" />)
+    const { container, rerender } = renderProductImage(<ProductImage productId="P004" productName="Monitor" variant="admin" />)
     expect(container.querySelector('img')?.getAttribute('src')).toMatch(/^\/product-images\/[a-z]+\.webp$/)
     rerender(<ProductImage productId="https://example.com/tracker.png" productName="Remote" variant="admin" />)
     expect(container.querySelector('img')).not.toBeInTheDocument()
   })
 
   it('applies the requested variant class', () => {
-    render(<ProductImage productId="P002" productName="Mouse" variant="order" />)
+    renderProductImage(<ProductImage productId="P002" productName="Mouse" variant="order" />)
     expect(screen.getByRole('img', { name: 'Mouse product' }).parentElement).toHaveClass(styles.order)
   })
 })

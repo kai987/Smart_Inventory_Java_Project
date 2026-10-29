@@ -32,25 +32,38 @@ function storedQuantity() {
 }
 
 describe('CartPage', () => {
-  it('clamps stored quantity to current stock', async () => {
+  it.each<{ language: AppLanguage; name: string; inputName: string; removeName: string; adjustment: string }>([
+    { language: 'en', name: 'Laptop', inputName: 'Quantity for Laptop', removeName: 'Remove Laptop', adjustment: 'Laptop was adjusted to the available stock (2).' },
+    { language: 'ja', name: 'ノートパソコン', inputName: 'ノートパソコンの数量', removeName: 'ノートパソコンを削除', adjustment: 'ノートパソコンの数量を在庫数（2）に調整しました。' },
+    { language: 'zh-CN', name: '笔记本电脑', inputName: '笔记本电脑 的数量', removeName: '移除 笔记本电脑', adjustment: '已将 笔记本电脑 的数量调整为可用库存（2）。' },
+  ])('localizes names and stock adjustment controls in $language without changing product identity', async ({ language, name, inputName, removeName, adjustment }) => {
     seedCart(5)
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
-    const { container } = renderWithProviders(<CartPage />)
-    const input = await screen.findByRole('spinbutton', { name: 'Quantity for Laptop' })
+    const { container } = renderWithProviders(<CartPage />, { language })
+    const input = await screen.findByRole('spinbutton', { name: inputName })
     await waitFor(() => expect(input).toHaveValue(2))
+    expect(screen.getByText(name, { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: removeName })).toBeInTheDocument()
     expect(container.querySelector('img')).toHaveAttribute('src', '/product-images/laptop.webp')
-    expect(await screen.findByText(/adjusted to the available stock/i)).toBeInTheDocument()
+    expect(await screen.findByText(adjustment)).toBeInTheDocument()
+    expect(laptop.name).toBe('Laptop')
   })
 
-  it('clears the cart after a successful order', async () => {
+  it.each<{ language: AppLanguage; buttonName: string; emptyTitle: string }>([
+    { language: 'en', buttonName: 'Place order', emptyTitle: 'Your cart is empty' },
+    { language: 'ja', buttonName: '注文を確定', emptyTitle: 'カートは空です' },
+    { language: 'zh-CN', buttonName: '提交订单', emptyTitle: '购物车为空' },
+  ])('submits the unchanged checkout payload and clears the cart in $language', async ({ language, buttonName, emptyTitle }) => {
     seedCart(1)
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
     vi.spyOn(orderApi, 'create').mockResolvedValue(savedOrder)
-    renderWithProviders(<CartPage />, { user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
+    renderWithProviders(<CartPage />, { language, user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Place order' }))
-    expect(await screen.findByText('Your cart is empty')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: buttonName }))
+    expect(await screen.findByText(emptyTitle)).toBeInTheDocument()
     expect(orderApi.create).toHaveBeenCalledWith({ items: [{ productId: 'P001', quantity: 1 }] }, expect.stringMatching(/^[A-Za-z0-9_-]{16,128}$/), expect.any(AbortSignal))
+    expect(savedOrder.items[0]?.productName).toBe('Laptop')
+    expect(laptop.name).toBe('Laptop')
   })
 
   it('freezes checkout controls and preserves additions during an in-flight order', async () => {
@@ -136,8 +149,8 @@ describe('CartPage', () => {
 
   it.each<{ language: AppLanguage; inputName: string; error: string }>([
     { language: 'en', inputName: 'Quantity for Laptop', error: 'Enter a whole number greater than zero.' },
-    { language: 'ja', inputName: 'Laptopの数量', error: '1以上の整数を入力してください。' },
-    { language: 'zh-CN', inputName: 'Laptop 的数量', error: '请输入大于 0 的整数。' },
+    { language: 'ja', inputName: 'ノートパソコンの数量', error: '1以上の整数を入力してください。' },
+    { language: 'zh-CN', inputName: '笔记本电脑 的数量', error: '请输入大于 0 的整数。' },
   ])('rejects invalid quantity without changing the cart in $language', async ({ language, inputName, error }) => {
     seedCart(1)
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
@@ -158,18 +171,48 @@ describe('CartPage', () => {
     await waitFor(() => expect(storedQuantity()).toBe(2))
   })
 
-  it('updates an active quantity error when the language changes', async () => {
+  it('updates names, accessible controls, and an active quantity error at runtime without changing cart data', async () => {
     seedCart(1)
     vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
     renderWithProviders(<><LanguageSelect /><CartPage /></>, { language: 'ja' })
     const user = userEvent.setup()
-    const input = await screen.findByRole('spinbutton', { name: 'Laptopの数量' })
+    const input = await screen.findByRole('spinbutton', { name: 'ノートパソコンの数量' })
+    const originalCart = window.localStorage.getItem(CART_STORAGE_KEY)
 
     fireEvent.change(input, { target: { value: '' } })
     expect(screen.getByRole('alert')).toHaveTextContent('1以上の整数を入力してください。')
     await user.selectOptions(screen.getByRole('combobox', { name: '言語' }), 'zh-CN')
     expect(await screen.findByRole('alert')).toHaveTextContent('请输入大于 0 的整数。')
+    expect(screen.getByText('笔记本电脑', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: '笔记本电脑 的数量' })).toBe(input)
+    expect(screen.getByRole('button', { name: '移除 笔记本电脑' })).toBeInTheDocument()
     expect(screen.queryByText('1以上の整数を入力してください。')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: '语言' }), 'en')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a whole number greater than zero.')
+    expect(screen.getByText('Laptop', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Quantity for Laptop' })).toBe(input)
+    expect(screen.getByRole('button', { name: 'Remove Laptop' })).toBeInTheDocument()
     expect(storedQuantity()).toBe(1)
+    expect(window.localStorage.getItem(CART_STORAGE_KEY)).toBe(originalCart)
+    expect(laptop.name).toBe('Laptop')
+  })
+
+  it('keeps renamed and unknown cart products unchanged instead of applying demo translations', async () => {
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ version: 1, items: [
+      { productId: 'P001', quantity: 1 }, { productId: 'P999', quantity: 1 },
+    ] }))
+    const renamed = { ...laptop, name: 'Custom Warehouse Laptop' }
+    const unknown = { ...laptop, id: 'P999' }
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [renamed, unknown], total: 2 })
+    const { container } = renderWithProviders(<CartPage />, { language: 'ja' })
+    expect(await screen.findByRole('spinbutton', { name: 'Custom Warehouse Laptopの数量' })).toHaveValue(1)
+    expect(screen.getByRole('button', { name: 'Custom Warehouse Laptopを削除' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Laptopの数量' })).toHaveValue(1)
+    expect(screen.getByText('Custom Warehouse Laptop', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Laptop', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.queryByText('ノートパソコン', { selector: 'strong' })).not.toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+    expect(renamed.name).toBe('Custom Warehouse Laptop')
+    expect(unknown.name).toBe('Laptop')
   })
 })

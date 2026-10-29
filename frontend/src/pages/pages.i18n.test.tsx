@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../api/adminApi'
 import { orderApi } from '../api/orderApi'
@@ -47,6 +48,8 @@ const languageCases = [
     language: 'ja',
     labels: {
       products: '商品一覧',
+      productName: 'ノートパソコン',
+      viewItemSnapshots: '注文時の商品情報を表示',
       addToCart: 'カートに追加',
       login: 'おかえりなさい',
       signIn: 'ログイン',
@@ -70,6 +73,8 @@ const languageCases = [
     language: 'zh-CN',
     labels: {
       products: '商品列表',
+      productName: '笔记本电脑',
+      viewItemSnapshots: '查看下单时的商品信息',
       addToCart: '加入购物车',
       login: '欢迎回来',
       signIn: '登录',
@@ -111,6 +116,7 @@ describe.each(languageCases)('$language page localization', ({ language, labels 
     renderWithProviders(<ProductsPage />, { language })
     expect(screen.getByRole('heading', { name: labels.products })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: labels.addToCart })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: labels.productName })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Products' })).not.toBeInTheDocument()
   })
 
@@ -138,6 +144,14 @@ describe.each(languageCases)('$language page localization', ({ language, labels 
     expect(await screen.findByRole('button', { name: labels.browseProducts })).toBeInTheDocument()
   })
 
+  it('localizes saved customer order names without rewriting the original snapshot', async () => {
+    vi.mocked(orderApi.mine).mockResolvedValue({ items: [savedOrder], total: 1 })
+    renderWithProviders(<OrdersPage />, { language, user: { username: 'customer', role: 'CUSTOMER' } })
+    await userEvent.setup().click(await screen.findByText(labels.viewItemSnapshots))
+    expect(await screen.findByText(labels.productName)).toBeVisible()
+    expect(savedOrder.items[0].productName).toBe('Laptop')
+  })
+
   it('localizes the admin dashboard', async () => {
     renderWithProviders(<AdminDashboardPage />, { language, user: { username: 'admin', role: 'ADMIN' } })
     expect(await screen.findByRole('heading', { name: labels.dashboard })).toBeInTheDocument()
@@ -149,12 +163,15 @@ describe.each(languageCases)('$language page localization', ({ language, labels 
     expect(screen.getByRole('heading', { name: labels.productsAdmin })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: labels.addProduct })).toBeInTheDocument()
     expect(await screen.findByRole('columnheader', { name: labels.productId })).toBeInTheDocument()
+    expect(await screen.findByText(labels.productName)).toBeVisible()
   })
 
   it('localizes admin orders and order labels', async () => {
     renderWithProviders(<AdminOrdersPage />, { language, user: { username: 'admin', role: 'ADMIN' } })
     expect(screen.getByRole('heading', { name: labels.ordersAdmin })).toBeInTheDocument()
     expect(await screen.findByText(labels.orderId)).toBeInTheDocument()
+    await userEvent.setup().click(await screen.findByText(savedOrder.orderId))
+    expect(await screen.findByText(`${labels.productName} · P001`)).toBeVisible()
   })
 
   it('localizes the forbidden page', () => {
