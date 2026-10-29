@@ -2,7 +2,16 @@
 
 This directory is the Cloudflare Worker-compatible deployment surface for Smart Inventory. It reuses the responsive React product, cart, order, and administrator screens while implementing the existing `/api` contract with Vinext route handlers and D1 persistence.
 
-The hosted database is intentionally separate from the Spring Boot application's CSV files. On first request it creates the schema and idempotently loads the same demo products, users, and historical orders. D1 migrations under `drizzle/` are packaged with each saved Sites version.
+The hosted database is intentionally separate from the Spring Boot application's CSV files. D1 migrations under `drizzle/` own the schema and are packaged with each saved Sites version. The first request seeds demo products, users, and historical orders only when the migrated database is completely empty. Existing records and intentionally deleted products are not reset or recreated on later cold starts.
+
+## Online demo
+
+- GitHub Pages entry: [https://kai987.github.io/Smart_Inventory_Java_Project/](https://kai987.github.io/Smart_Inventory_Java_Project/)
+- Direct Site URL: [https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products](https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products)
+
+This online deployment uses the shared React interface, a TypeScript/Vinext API, and D1. The repository's Rust backend remains a separate local option and is not running on this Site. The root `pages/` directory contains the redirect-only GitHub Pages entry, not the application backend.
+
+Public demo credentials allow order placement and administrator product/stock changes, so visitors share mutable demo data. This is not a payment service: no real payments are processed. Do not submit real personal information, real customer data, or passwords used elsewhere. Demo credentials are listed in Local verification below.
 
 ## Local verification
 

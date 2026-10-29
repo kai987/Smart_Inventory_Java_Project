@@ -11,6 +11,15 @@ Smart Inventory は、商品・在庫・顧客注文・梱包数の見積もり�
 
 追加の [Rust バックエンド](backend-rust/README.md) は、React の画面を変更せずに、同じ `/api` 契約と CSV 形式に対応します。Rust 版には開発・テスト・ネイティブパッケージ作成用の専用コマンドがあります。Rust を選んでも、Java の授業課題を置き換えたり削除したりすることはありません。
 
+## オンラインデモ
+
+- 入口（GitHub Pages）：[https://kai987.github.io/Smart_Inventory_Java_Project/](https://kai987.github.io/Smart_Inventory_Java_Project/)
+- Site へ直接アクセス：[https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products](https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products)
+
+オンライン版は React の画面と **TypeScript/Vinext API＋D1 データベース**で構成します。Rust 版はローカル開発・実行用として残し、この Site にはデプロイしません。GitHub Pages は Site へのリダイレクト専用で、Java・Rust のサーバーやデータベースを実行する場所ではありません。
+
+公開デモアカウントでは、顧客の注文や管理者の商品・在庫変更が可能です。共有デモデータは他の利用者によって変更されることがあります。実際の決済は行いません。実在する個人情報・実顧客データ・他サービスで使っているパスワードは入力しないでください。認証情報は後述の「デモアカウント」を参照してください。
+
 ## コンソール版からフルスタックアプリケーションへ
 
 最初のバージョンは、オブジェクト指向プログラミングの授業で作成した Java コンソールアプリケーションです。そのソースコード・CSV データ・ドキュメント・回帰テストは、履歴を残すために [`legacy-console/`](legacy-console/README.md) に保存しています。Web 版では、業務ルールを Java 21 のバックエンドに移し、並行アクセスを安全に扱うアプリケーションサービス、REST API、レスポンシブな React UI を追加しています。
@@ -71,6 +80,7 @@ flowchart TD
 ├── backend-rust/            API 互換のオプション Rust バックエンドとテスト
 ├── frontend/                React/Vite SPA、単体テスト、Playwright テスト
 ├── site/                    D1 API を備えた Sites/Vinext 向け構成
+├── pages/                   オンライン Site へ移動する GitHub Pages 用の入口
 ├── legacy-console/          元の OOP 授業課題のコンソールアプリケーション
 ├── runtime-data/            Java Web 版の実行時 CSV。自動生成され、Git 管理対象外
 ├── runtime-data-rust/       Rust 版専用の実行時 CSV。自動生成され、Git 管理対象外
@@ -218,7 +228,7 @@ username: customer
 password: user123
 ```
 
-これらはローカルデモ専用の認証情報です。本番用アカウントとして使用しないでください。初期データのパスワードは平文ではなく、計算コストを調整できるパスワードハッシュとして保存しています。
+これらはローカル版と公開オンライン版で使用するデモ用の認証情報です。本番用アカウントとして使用しないでください。初期データのパスワードは平文ではなく、計算コストを調整できるパスワードハッシュとして保存しています。
 
 ## デモデータの初期化
 

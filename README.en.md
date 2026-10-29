@@ -11,6 +11,15 @@ The application runs in two modes:
 
 These remain the default Java workflows. An additional [Rust backend](backend-rust/README.md) implements the same `/api` contract and CSV formats without changing the React screens. It has separate development, test, and native-package commands; choosing Rust does not replace or remove the Java coursework.
 
+## Online demo
+
+- GitHub Pages entry: [https://kai987.github.io/Smart_Inventory_Java_Project/](https://kai987.github.io/Smart_Inventory_Java_Project/)
+- Direct Site URL: [https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products](https://smart-inventory-demo.huamengdiqidiguo.chatgpt.site/products)
+
+The online version uses the React interface with a **TypeScript/Vinext API and D1 database**. The Rust version remains available for local development and execution; it is not deployed to this Site. GitHub Pages is a redirect-only entry and does not run a Java/Rust server or database.
+
+The public demo accounts allow customers to place orders and administrators to modify products and stock. Other visitors can change the shared demo data. No real payments are processed. Do not enter real personal information, real customer data, or passwords reused on other services. See the Demo accounts section below for the published credentials.
+
 ## From console project to full-stack application
 
 The first version was a Java console application created for an Object-Oriented Programming course. Its source code, CSV data, documentation, and regression test remain unchanged under [`legacy-console/`](legacy-console/README.md) as a historical version. The web version moves the domain rules into a packaged Java 21 backend, adds concurrency-safe application services and a REST API, and provides a responsive React interface.
@@ -71,6 +80,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 ├── backend-rust/            Optional API-compatible Rust backend and tests
 ├── frontend/                React/Vite SPA, unit tests, and Playwright tests
 ├── site/                    Sites/Vinext deployment with D1-backed API
+├── pages/                   GitHub Pages entry that redirects to the online Site
 ├── legacy-console/          Original OOP course console application
 ├── runtime-data/            Local web-app CSV data; generated and ignored by Git
 ├── runtime-data-rust/       Isolated local Rust CSV data; generated and ignored
@@ -218,7 +228,7 @@ username: customer
 password: user123
 ```
 
-These credentials are for local demonstration only. Seed passwords are stored as adaptive password hashes, not plaintext.
+These published credentials are for the local and public online demos, not production accounts. Seed passwords are stored as adaptive password hashes, not plaintext.
 
 ## Reset demo data
 
