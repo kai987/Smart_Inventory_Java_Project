@@ -68,6 +68,22 @@ describe('ProductsPage', () => {
     expect(screen.queryByRole('heading', { name: 'Desk Lamp' })).not.toBeInTheDocument()
   })
 
+  it('uses saved custom categories for filtering and renders the uploaded product image', async () => {
+    const imageUrl = '/api/product-images/12345678-1234-1234-1234-123456789abc.webp'
+    const custom: Product = { ...customProduct, category: 'travel', imageUrl }
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [lamp, custom], total: 2 })
+    const { container } = renderWithProviders(<ProductsPage />)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: custom.name })
+    await user.click(screen.getByRole('button', { name: 'Travel' }))
+    expect(screen.getByRole('heading', { name: custom.name })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Desk Lamp' })).not.toBeInTheDocument()
+    expect(container.querySelector('article img')).toHaveAttribute('src', imageUrl)
+    await user.click(screen.getByRole('button', { name: 'Other' }))
+    expect(screen.queryByRole('heading', { name: custom.name })).not.toBeInTheDocument()
+    expect(screen.getByText('No products found')).toBeInTheDocument()
+  })
+
   it('sorts both price directions without losing large integer precision', async () => {
     const items = [{ ...laptop, priceYen: '9007199254740993' }, { ...lamp, priceYen: '9007199254740992' }]
     vi.spyOn(productApi, 'list').mockResolvedValue({ items, total: 2 })

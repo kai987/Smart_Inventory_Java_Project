@@ -6,7 +6,7 @@ import { createI18nInstance } from '../../i18n/i18n'
 import type { AppLanguage } from '../../i18n/language'
 import { ProductImage } from './ProductImage'
 import styles from './ProductImage.module.css'
-import { getProductImagePath } from './productImages'
+import { getProductImagePath, isUploadedProductImageUrl } from './productImages'
 
 function renderProductImage(ui: ReactElement, language: AppLanguage = 'en') {
   const instance = createI18nInstance(language)
@@ -88,6 +88,28 @@ describe('ProductImage', () => {
     expect(getProductImagePath('P005', 'Custom Handmade Mug')).toBeNull()
     renderProductImage(<ProductImage productId="P005" productName="Custom Handmade Mug" variant="catalog" />)
     expect(screen.getByRole('img', { name: 'Custom Handmade Mug product' })).not.toBeInstanceOf(HTMLImageElement)
+  })
+
+  it('prefers a validated uploaded image for custom products and standard photo overrides', () => {
+    const imageUrl = '/api/product-images/12345678-1234-1234-1234-123456789abc.webp'
+    expect(isUploadedProductImageUrl(imageUrl)).toBe(true)
+    expect(getProductImagePath('P005', 'Custom Cup', imageUrl)).toBe(imageUrl)
+    const { rerender } = renderProductImage(<ProductImage productId="P900" productName="Custom Cup" imageUrl={imageUrl} variant="catalog" />)
+    expect(screen.getByRole('img', { name: 'Custom Cup product' })).toHaveAttribute('src', imageUrl)
+    rerender(<ProductImage productId="P001" productName="Laptop" imageUrl={imageUrl} variant="cart" />)
+    expect(screen.getByRole('img', { name: 'Laptop product' })).toHaveAttribute('src', imageUrl)
+  })
+
+  it.each([
+    'https://example.com/photo.webp', '//example.com/photo.webp', 'data:image/png;base64,AAAA',
+    'blob:unsafe-persisted-preview', '/api/product-images/../secret.png',
+    '/api/product-images/12345678-1234-1234-1234-123456789abc.svg',
+    '/api/product-images/12345678-1234-1234-1234-123456789abc.png?redirect=1',
+    '/api/product-images/not-a-uuid.png',
+  ])('rejects a non-upload image URL %s and retains the identity-safe fallback', (imageUrl) => {
+    expect(isUploadedProductImageUrl(imageUrl)).toBe(false)
+    expect(getProductImagePath('P001', 'Laptop', imageUrl)).toBe('/product-images/laptop.webp')
+    expect(getProductImagePath('P001', 'Custom Cup', imageUrl)).toBeNull()
   })
 
   it('preserves compact dimensions outside the catalog', () => {

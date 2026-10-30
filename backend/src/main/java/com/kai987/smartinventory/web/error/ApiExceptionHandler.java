@@ -29,6 +29,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DomainException.class)
     public ResponseEntity<ApiErrorResponse> handleDomain(DomainException exception,
             HttpServletRequest request) {
+        if (exception.getStatus() != exception.getErrorCode().status()) {
+            return ResponseEntity.status(exception.getStatus()).body(new ApiErrorResponse(Instant.now(),
+                    exception.getStatus().value(), exception.getErrorCode().name(), exception.getMessage(),
+                    request.getRequestURI(), exception.getFieldErrors()));
+        }
         return response(exception.getErrorCode(), exception.getMessage(),
                 exception.getFieldErrors(), request);
     }

@@ -197,6 +197,7 @@ export function CartPage() {
                     <ProductImage
                       productId={cartItem.productId}
                       productName={product?.name ?? cartItem.productId}
+                      imageUrl={product?.imageUrl}
                       variant="cart"
                       alt=""
                     />

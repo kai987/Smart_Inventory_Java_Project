@@ -7,6 +7,7 @@ import com.kai987.smartinventory.web.dto.error.FieldErrorResponse;
 public class DomainException extends RuntimeException {
     private final ErrorCode errorCode;
     private final List<FieldErrorResponse> fieldErrors;
+    private final org.springframework.http.HttpStatus status;
 
     public DomainException(ErrorCode errorCode) {
         this(errorCode, errorCode.defaultMessage(), List.of());
@@ -21,8 +22,17 @@ public class DomainException extends RuntimeException {
         super(message);
         this.errorCode = errorCode;
         this.fieldErrors = List.copyOf(fieldErrors);
+        this.status = errorCode.status();
+    }
+
+    public DomainException(ErrorCode errorCode, org.springframework.http.HttpStatus status) {
+        super(errorCode.defaultMessage());
+        this.errorCode = errorCode;
+        this.fieldErrors = List.of();
+        this.status = status;
     }
 
     public ErrorCode getErrorCode() { return errorCode; }
     public List<FieldErrorResponse> getFieldErrors() { return fieldErrors; }
+    public org.springframework.http.HttpStatus getStatus() { return status; }
 }

@@ -1,4 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
+
+const ORIGINAL_IMAGE = fileURLToPath(new URL('../public/product-images/stainless-steel-bottle.webp', import.meta.url))
+const REPLACEMENT_IMAGE = fileURLToPath(new URL('../public/product-images/travel-backpack.webp', import.meta.url))
 
 const PRODUCT_ID = 'P987'
 const originalNames = {
@@ -60,7 +64,7 @@ async function expectNamesAcrossLanguages(page: Page, item: Locator, names: Reco
   }
 }
 
-test('custom names survive creation, locale switches, checkout, rename, and product deletion', async ({ page }) => {
+test('custom names, category and images survive save, checkout, edits, and product deletion', async ({ page }) => {
   test.setTimeout(120_000)
   // Playwright starts the backend with its disposable .playwright-data[-rust] directory.
   await removeOwnFixture(page)
@@ -76,6 +80,9 @@ test('custom names survive creation, locale switches, checkout, rename, and prod
     await dialog.getByLabel('Price (JPY)', { exact: true }).fill('1875')
     await dialog.getByLabel('Stock', { exact: true }).fill('3')
     await dialog.getByLabel('Weight (kg)', { exact: true }).fill('0.45')
+    await dialog.getByLabel('Category', { exact: true }).selectOption('travel')
+    await dialog.getByLabel('Product image', { exact: true }).setInputFiles(ORIGINAL_IMAGE)
+    await expect(dialog.getByRole('img', { name: 'Selected product image preview', exact: true })).toBeVisible()
 
     await selectLanguage(page, 'ja')
     dialog = page.getByRole('dialog', { name: '商品を追加', exact: true })
@@ -93,6 +100,9 @@ test('custom names survive creation, locale switches, checkout, rename, and prod
     await dialog.getByRole('button', { name: 'Add product', exact: true }).click()
     await expect(dialog).not.toBeVisible()
     await expect(fixtureRow(page).getByRole('cell', { name: originalNames.en, exact: true })).toBeVisible()
+    await expect(fixtureRow(page).locator('img')).toHaveAttribute('src', /^\/api\/product-images\/[a-f0-9-]+\.webp$/)
+    const originalImageUrl = await fixtureRow(page).locator('img').getAttribute('src')
+    if (originalImageUrl === null) throw new Error('Uploaded image URL is missing')
 
     await page.reload()
     for (const { language, query } of [
@@ -109,10 +119,13 @@ test('custom names survive creation, locale switches, checkout, rename, and prod
     await loginWithDemo(page, 'customer')
     await page.getByRole('searchbox').fill(PRODUCT_ID)
     await expect(fixtureArticle(page).getByRole('heading', { name: originalNames.en, exact: true })).toBeVisible()
+    await expect(fixtureArticle(page).getByText('Travel', { exact: true })).toBeVisible()
+    await expect(fixtureArticle(page).locator('img')).toHaveAttribute('src', originalImageUrl)
     await fixtureArticle(page).getByRole('button', { name: 'Add to cart', exact: true }).click()
     await page.getByRole('link', { name: /Cart 1/ }).click()
     const cartItem = fixtureArticle(page)
     await expect(cartItem.getByRole('spinbutton')).toHaveValue('1')
+    await expect(cartItem.locator('img')).toHaveAttribute('src', originalImageUrl)
     await expectNamesAcrossLanguages(page, cartItem, originalNames)
     await expect(cartItem.getByRole('spinbutton')).toHaveValue('1')
     await page.getByRole('button', { name: 'Place order', exact: true }).click()
@@ -126,13 +139,17 @@ test('custom names survive creation, locale switches, checkout, rename, and prod
     await loginWithDemo(page, 'admin')
     await page.goto('/admin/products')
     await page.getByRole('searchbox', { name: 'Search products' }).fill(PRODUCT_ID)
-    await fixtureRow(page).getByRole('button', { name: `Edit names for ${originalNames.en}`, exact: true }).click()
-    dialog = page.getByRole('dialog', { name: 'Edit product names', exact: true })
+    await fixtureRow(page).getByRole('button', { name: `Edit details for ${originalNames.en}`, exact: true }).click()
+    dialog = page.getByRole('dialog', { name: 'Edit product details', exact: true })
     await dialog.getByLabel('English name (required)', { exact: true }).fill(updatedNames.en)
     await dialog.getByLabel('Japanese name (optional)', { exact: true }).fill(updatedNames.ja)
     await dialog.getByLabel('Chinese name (optional)', { exact: true }).fill(updatedNames['zh-CN'])
-    await dialog.getByRole('button', { name: 'Save names', exact: true }).click()
+    await expect(dialog.getByLabel('Category', { exact: true })).toHaveValue('travel')
+    await dialog.getByLabel('Category', { exact: true }).selectOption('home')
+    await dialog.getByLabel('Product image', { exact: true }).setInputFiles(REPLACEMENT_IMAGE)
+    await dialog.getByRole('button', { name: 'Save details', exact: true }).click()
     await expect(dialog).not.toBeVisible()
+    await expect(fixtureRow(page).locator('img')).not.toHaveAttribute('src', originalImageUrl)
     await expectNamesAcrossLanguages(page, fixtureRow(page), updatedNames)
     await expect(fixtureRow(page).getByRole('cell', { name: '2', exact: true })).toBeVisible()
     await fixtureRow(page).getByRole('button', { name: `Delete ${updatedNames.en}`, exact: true }).click()
@@ -145,6 +162,10 @@ test('custom names survive creation, locale switches, checkout, rename, and prod
     const historicalOrder = page.getByRole('article').filter({ has: page.getByText(orderId, { exact: true }) })
     await historicalOrder.getByText('View item snapshots', { exact: true }).click()
     await expectNamesAcrossLanguages(page, historicalOrder, originalNames)
+    await expect(historicalOrder.locator('img')).toHaveAttribute('src', originalImageUrl)
+    const imageResponse = await page.request.get(originalImageUrl)
+    expect(imageResponse.status()).toBe(200)
+    expect(imageResponse.headers()['content-type']).toBe('image/webp')
     for (const name of Object.values(updatedNames)) await expect(historicalOrder.getByText(name, { exact: true })).toHaveCount(0)
     await page.goto('/products')
     await page.getByRole('searchbox').fill(PRODUCT_ID)

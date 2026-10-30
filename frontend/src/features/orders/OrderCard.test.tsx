@@ -93,4 +93,16 @@ describe('OrderCard localized snapshot names', () => {
     expect(container.querySelector('img')).toBeNull()
     expect(order).toEqual(original)
   })
+
+  it('renders the saved uploaded image even when the product is no longer in the catalog', async () => {
+    const imageUrl = '/api/product-images/12345678-1234-1234-1234-123456789abc.png'
+    const order = historicalOrder()
+    order.items = [{ ...order.items[0], productId: 'P900', productName: 'Deleted Handmade Cup', productImageUrl: imageUrl }]
+    const original = structuredClone(order)
+    const { container } = renderWithProviders(<OrderCard order={order} />)
+    await userEvent.setup().click(screen.getByText('View item snapshots'))
+    expectSnapshotName('P900', 'Deleted Handmade Cup')
+    expect(container.querySelector('img')).toHaveAttribute('src', imageUrl)
+    expect(order).toEqual(original)
+  })
 })

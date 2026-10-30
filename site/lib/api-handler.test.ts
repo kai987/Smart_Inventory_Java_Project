@@ -1,12 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { keyedOrderId } from './order-idempotency';
 
-const context = vi.hoisted(() => ({ database: null as D1Database | null }));
+const context = vi.hoisted(() => ({ database: null as D1Database | null, bucket: null as R2Bucket | null }));
 vi.mock('./database', () => ({ ensureDatabase: async () => context.database! }));
+vi.mock('cloudflare:workers', () => ({ env: { get BUCKET() { return context.bucket!; } } }));
 import { handleApiRequest } from './api-handler';
 
 let sqlite: DatabaseSync;
+let images: Map<string, { bytes: Uint8Array; contentType: string }>;
 class Prepared {
   constructor(readonly sql: string, readonly values: (string | number | null)[] = []) { }
   bind(...values: (string | number | null)[]) { return new Prepared(this.sql, values); }
@@ -35,8 +38,11 @@ beforeEach(() => {
     INSERT INTO products VALUES ('P001','Laptop','120000',8,3),('P002','Mouse','2500',30,0.2);
     ALTER TABLE products ADD COLUMN name_ja TEXT;
     ALTER TABLE products ADD COLUMN name_zh TEXT;
+    ALTER TABLE products ADD COLUMN category TEXT;
+    ALTER TABLE products ADD COLUMN image_url TEXT;
     ALTER TABLE order_items ADD COLUMN product_name_ja TEXT;
     ALTER TABLE order_items ADD COLUMN product_name_zh TEXT;
+    ALTER TABLE order_items ADD COLUMN product_image_url TEXT;
     INSERT INTO users VALUES ('admin','unused','ADMIN');
   `);
   for (const [id, user] of [['customer-session', 'customer'], ['other-session', 'other'], ['anonymous-session', null], ['admin-session', 'admin']]) {
@@ -62,6 +68,18 @@ beforeEach(() => {
       }
     },
   } as unknown as D1Database;
+  images = new Map();
+  context.bucket = {
+    head: async (key: string) => images.has(key) ? { key } : null,
+    put: async (key: string, bytes: Uint8Array, options: { httpMetadata: { contentType: string } }) => {
+      images.set(key, { bytes: Uint8Array.from(bytes), contentType: options.httpMetadata.contentType });
+      return { key };
+    },
+    get: async (key: string) => {
+      const image = images.get(key);
+      return image ? { body: new Blob([image.bytes as Uint8Array<ArrayBuffer>]).stream(), size: image.bytes.length, httpEtag: '"image-etag"' } : null;
+    },
+  } as unknown as R2Bucket;
 });
 afterEach(() => sqlite.close());
 
@@ -80,6 +98,115 @@ type ErrorResponse = { code: string };
 const orderJson = async (response: Response) => await response.json() as OrderResponse;
 const stock = () => sqlite.prepare("SELECT stock FROM products WHERE id='P002'").get()!.stock;
 const count = () => sqlite.prepare('SELECT COUNT(*) AS count FROM orders').get()!.count;
+
+const pngImage = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j91sAAAAASUVORK5CYII=', 'base64'));
+// Complete one-pixel grayscale JPEG: quantization/frame/Huffman/scan/EOI.
+const jpegImage = Uint8Array.from([
+  0xff, 0xd8, 0xff, 0xdb, 0, 67, 0, ...Array<number>(64).fill(1),
+  0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0,
+  0xff, 0xc4, 0, 20, 0, 1, ...Array<number>(15).fill(0), 0,
+  0xff, 0xc4, 0, 20, 0x10, 1, ...Array<number>(15).fill(0), 0,
+  0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0, 0x3f, 0xff, 0xd9,
+]);
+const webpImage = new Uint8Array(readFileSync(new URL('../public/product-images/laptop.webp', import.meta.url)));
+
+async function upload(bytes: Uint8Array, contentType = 'image/png', session = 'admin-session', csrf: string | null = 'test-token') {
+  return handleApiRequest(new Request('http://localhost/api/product-images', {
+    method: 'POST', headers: {
+      'Content-Type': contentType,
+      Cookie: `SMART_INVENTORY_SESSION=${session}`,
+      ...(csrf === null ? {} : { 'X-CSRF-TOKEN': csrf }),
+    }, body: bytes as Uint8Array<ArrayBuffer>,
+  }));
+}
+
+describe('Site product image storage', () => {
+  it.each([['image/png', pngImage, 'png'], ['image/jpeg', jpegImage, 'jpg'], ['image/webp', webpImage, 'webp']] as const)('uploads complete %s binary and serves immutable public bytes', async (contentType, bytes, extension) => {
+    const response = await upload(bytes, contentType);
+    expect(response.status).toBe(201);
+    const { imageUrl } = await response.json() as { imageUrl: string };
+    expect(imageUrl).toMatch(new RegExp(`^/api/product-images/[0-9a-f-]{36}\\.${extension}$`));
+    expect(response.headers.get('set-cookie')).toContain('HttpOnly');
+    const image = await handleApiRequest(new Request(`http://localhost${imageUrl}`));
+    expect(image.status).toBe(200);
+    expect(image.headers.get('content-type')).toBe(contentType);
+    expect(image.headers.get('content-length')).toBe(String(bytes.length));
+    expect(image.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(image.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(image.headers.get('content-security-policy')).toContain('sandbox');
+    expect(image.headers.get('etag')).toBe('"image-etag"');
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('requires administrator authentication and CSRF before reading or saving uploaded bytes', async () => {
+    expect((await upload(pngImage, 'image/png', 'customer-session')).status).toBe(403);
+    expect((await upload(pngImage, 'image/png', 'anonymous-session')).status).toBe(401);
+    expect((await upload(pngImage, 'image/png', 'admin-session', null)).status).toBe(403);
+    expect((await upload(pngImage, 'image/png', 'admin-session', 'wrong-token')).status).toBe(403);
+    expect(images.size).toBe(0);
+  });
+
+  it('rejects missing/empty images, MIME mismatches and truncated or fake image bytes', async () => {
+    expect((await upload(new Uint8Array())).status).toBe(400);
+    expect(await (await upload(new Uint8Array())).json()).toMatchObject({ code: 'IMAGE_EMPTY' });
+    for (const mime of ['image/svg+xml', 'text/html', 'application/octet-stream', 'image/gif', 'toString']) {
+      const response = await upload(pngImage, mime);
+      expect(response.status).toBe(415);
+      expect(await response.json()).toMatchObject({ code: 'IMAGE_TYPE' });
+    }
+    for (const [bytes, mime] of [[pngImage, 'image/jpeg'], [jpegImage, 'image/png'], [pngImage.slice(0, -1), 'image/png'],
+      [jpegImage.slice(0, -2), 'image/jpeg'], [webpImage.slice(0, -2), 'image/webp'], [new Uint8Array(100), 'image/png']] as const) {
+      const response = await upload(bytes, mime);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'IMAGE_TYPE' });
+    }
+    expect(images.size).toBe(0);
+  });
+
+  it('rejects JPEG scans with premature EOI markers or trailing bytes rather than accepting only their headers', async () => {
+    const noEntropy = Uint8Array.from([...jpegImage.slice(0, -3), 0xff, 0xd9, 0, 0xff, 0xd9]);
+    const trailingData = Uint8Array.from([...jpegImage, 0, 0xff, 0xd9]);
+    for (const invalid of [noEntropy, trailingData]) {
+      const response = await upload(invalid, 'image/jpeg');
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'IMAGE_TYPE' });
+    }
+    expect(images.size).toBe(0);
+  });
+
+  it('enforces the streaming 2 MiB bound without Content-Length and stops reading excess bytes', async () => {
+    let canceled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array(2 * 1024 * 1024)); controller.enqueue(new Uint8Array(1)); },
+      cancel() { canceled = true; },
+    });
+    const response = await handleApiRequest(new Request('http://localhost/api/product-images', {
+      method: 'POST', headers: { 'Content-Type': 'image/png', 'X-CSRF-TOKEN': 'test-token', Cookie: 'SMART_INVENTORY_SESSION=admin-session' },
+      body: stream, duplex: 'half',
+    } as RequestInit));
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ code: 'IMAGE_SIZE' });
+    expect(canceled).toBe(true);
+    expect(images.size).toBe(0);
+  });
+
+  it('rejects declared oversize bodies before reading and accepts exactly 2 MiB only if structurally valid', async () => {
+    const response = await handleApiRequest(new Request('http://localhost/api/product-images', {
+      method: 'POST', headers: { 'Content-Type': 'image/png', 'Content-Length': String(2 * 1024 * 1024 + 1), 'X-CSRF-TOKEN': 'test-token', Cookie: 'SMART_INVENTORY_SESSION=admin-session' }, body: pngImage,
+    }));
+    expect(response.status).toBe(413);
+    expect((await upload(new Uint8Array(2 * 1024 * 1024))).status).toBe(400);
+    expect(images.size).toBe(0);
+  });
+
+  it('rejects traversal, non-UUID filenames and missing media without exposing bucket paths', async () => {
+    for (const path of ['not-a-uuid.png', '..%2Fprivate.png', '%2e%2e%2fusers.csv', '00000000-0000-4000-8000-000000000000.svg', '00000000-0000-4000-8000-000000000000.png']) {
+      const response = await handleApiRequest(new Request(`http://localhost/api/product-images/${path}`));
+      expect(response.status).toBe(404);
+    }
+    expect((await handleApiRequest(new Request('http://localhost/api/product-images/00000000-0000-4000-8000-000000000000.png', { method: 'DELETE' }))).status).toBe(404);
+  });
+});
 
 describe('Site administrator multilingual product names', () => {
   const product = { id: 'P900', name: 'Travel Mug', priceYen: '1900', stock: 12, weightKg: 0.4 };
@@ -157,6 +284,93 @@ describe('Site administrator multilingual product names', () => {
     expect(await (await post('orders', request)).json()).toEqual(original);
     expect(sqlite.prepare('SELECT product_name_ja, product_name_zh FROM order_items').get())
       .toEqual({ product_name_ja: 'トラベルマグ', product_name_zh: '旅行杯' });
+  });
+});
+
+describe('Site administrator custom product details', () => {
+  const product = { id: 'P900', name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷杯', category: 'kitchen', priceYen: '1900', stock: 12, weightKg: 0.4 };
+  const get = (path: string, session?: string) => handleApiRequest(new Request(`http://localhost/api/${path}`, {
+    ...(session ? { headers: { Cookie: `SMART_INVENTORY_SESSION=${session}` } } : {}),
+  }));
+  const imageUrl = async () => (await (await upload(pngImage)).json() as { imageUrl: string }).imageUrl;
+
+  it('creates category/image metadata while preserving old clients and no-image products', async () => {
+    const response = await post('products', product, null, 'admin-session');
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ ...product, available: true });
+    const legacy = await get('products/P001');
+    expect(await legacy.json()).toEqual({ id: 'P001', name: 'Laptop', priceYen: '120000', stock: 8, weightKg: 3, available: true });
+    const url = await imageUrl();
+    const withImage = { ...product, id: 'P901', category: 'home', imageUrl: url };
+    expect(await (await post('products', withImage, null, 'admin-session')).json()).toEqual({ ...withImage, available: true });
+    expect(await (await get('products/P901')).json()).toEqual({ ...withImage, available: true });
+    expect(await (await get('products?q=P901')).json()).toEqual({ items: [{ ...withImage, available: true }], total: 1 });
+  });
+
+  it('atomically edits names/category and retains, replaces, then clears the image without changing inventory', async () => {
+    const first = await imageUrl();
+    const second = await imageUrl();
+    await post('products', { ...product, imageUrl: first }, null, 'admin-session');
+    const details = { name: 'Travel Mug', nameJa: 'トラベルマグ', nameZh: '旅行杯', category: 'travel' };
+    const retained = await post('products/P900/details', details, null, 'admin-session', 'PATCH');
+    expect(retained.status).toBe(200);
+    expect(await retained.json()).toEqual({ ...product, ...details, imageUrl: first, available: true });
+    const replaced = await post('products/P900/details', { ...details, imageUrl: second }, null, 'admin-session', 'PATCH');
+    expect(await replaced.json()).toEqual({ ...product, ...details, imageUrl: second, available: true });
+    const namesOnly = await post('products/P900/names', { name: 'Only Rename', nameJa: '名前のみ', nameZh: '仅改名称' }, null, 'admin-session', 'PATCH');
+    expect(await namesOnly.json()).toEqual({ ...product, ...details, name: 'Only Rename', nameJa: '名前のみ', nameZh: '仅改名称', imageUrl: second, available: true });
+    const cleared = await post('products/P900/details', { ...details, imageUrl: null }, null, 'admin-session', 'PATCH');
+    expect(await cleared.json()).toEqual({ ...product, ...details, available: true });
+    expect(images.size).toBe(2); // immutable old images remain available to snapshots
+  });
+
+  it('rejects invalid or missing categories/image URLs and does not partially rename the product', async () => {
+    await post('products', product, null, 'admin-session');
+    for (const invalid of [null, '', 'food', 42, {}]) {
+      const created = await post('products', { ...product, id: 'P901', category: invalid }, null, 'admin-session');
+      expect(created.status).toBe(400);
+      expect(await created.json()).toMatchObject({ fieldErrors: [{ field: 'category' }] });
+      const changed = await post('products/P900/details', { name: 'Unwanted Rename', category: invalid }, null, 'admin-session', 'PATCH');
+      expect(changed.status).toBe(400);
+    }
+    expect((await post('products/P900/details', { name: 'Unwanted Rename' }, null, 'admin-session', 'PATCH')).status).toBe(400);
+    for (const invalid of ['', false, 42, {}, 'https://example.com/a.png', 'data:image/png;base64,AAAA', 'blob:example', '/api/product-images/../users.csv', '/product-images/laptop.webp', '/api/product-images/00000000-0000-4000-8000-000000000000.png']) {
+      const changed = await post('products/P900/details', { name: 'Unwanted Rename', category: 'home', imageUrl: invalid }, null, 'admin-session', 'PATCH');
+      expect(changed.status).toBe(400);
+      expect(await changed.json()).toMatchObject({ fieldErrors: [{ field: 'imageUrl' }] });
+      expect((await post('products', { ...product, id: 'P901', imageUrl: invalid }, null, 'admin-session')).status).toBe(400);
+    }
+    expect(await (await get('products/P900')).json()).toEqual({ ...product, available: true });
+    expect((await get('products/P901')).status).toBe(404);
+  });
+
+  it('requires administrator and CSRF and leaves product data untouched on unauthorized details updates', async () => {
+    const details = { name: 'Unwanted Rename', category: 'other' };
+    expect((await post('products/P001/details', details, null, 'customer-session', 'PATCH')).status).toBe(403);
+    expect((await post('products/P001/details', details, null, 'anonymous-session', 'PATCH')).status).toBe(401);
+    expect((await handleApiRequest(new Request('http://localhost/api/products/P001/details', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: 'SMART_INVENTORY_SESSION=admin-session' }, body: JSON.stringify(details),
+    }))).status).toBe(403);
+    expect(sqlite.prepare("SELECT name,category,image_url FROM products WHERE id='P001'").get()).toEqual({ name: 'Laptop', category: null, image_url: null });
+  });
+
+  it('stores immutable image snapshots and replays the same order after image replacement and product deletion', async () => {
+    const first = await imageUrl();
+    const second = await imageUrl();
+    await post('products', { ...product, imageUrl: first }, null, 'admin-session');
+    const intent = { items: [{ productId: 'P900', quantity: 1 }] };
+    const response = await post('orders', intent);
+    expect(response.status).toBe(201);
+    const original = await response.json();
+    expect(original).toMatchObject({ items: [{ productId: 'P900', productImageUrl: first, productName: 'Ceramic Mug', productNameJa: '陶器マグ', productNameZh: '陶瓷杯' }] });
+    await post('products/P900/details', { name: 'New Mug', category: 'other', imageUrl: second }, null, 'admin-session', 'PATCH');
+    expect(await (await post('orders', intent)).json()).toEqual(original);
+    await post('products/P900', null, null, 'admin-session', 'DELETE');
+    expect(await (await post('orders', intent)).json()).toEqual(original);
+    expect(await (await get('orders/me', 'customer-session')).json()).toEqual({ items: [original], total: 1 });
+    expect(await (await get('orders', 'admin-session')).json()).toEqual({ items: [original], total: 1 });
+    expect((await handleApiRequest(new Request(`http://localhost${first}`))).status).toBe(200);
+    expect(images.size).toBe(2);
   });
 });
 

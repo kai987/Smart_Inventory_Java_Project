@@ -10,5 +10,7 @@ public record ProductResponse(
         double weightKg,
         boolean available,
         @JsonInclude(JsonInclude.Include.NON_NULL) String nameJa,
-        @JsonInclude(JsonInclude.Include.NON_NULL) String nameZh) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) String nameZh,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String category,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String imageUrl) {
 }

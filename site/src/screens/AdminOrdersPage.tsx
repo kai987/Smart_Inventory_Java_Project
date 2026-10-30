@@ -6,6 +6,7 @@ import { orderApi } from '../api/orderApi'
 import { queryKeys } from '../app/queryClient'
 import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
+import { ProductImage } from '../features/products/ProductImage'
 import { useProductNames } from '../features/products/useProductNames'
 import { useLocaleFormatters } from '../i18n/formatters'
 import { useLocalizedDocumentTitle } from '../i18n/useLocalizedDocumentTitle'
@@ -54,7 +55,7 @@ export default function AdminOrdersPage() {
               <div className={styles.adminOrderItems}>
                 {order.items.map((item) => (
                   <div className={styles.adminOrderItem} key={item.productId}>
-                    <div><span>{t('admin.product')}</span><strong>{productName(item.productId, item.productName, { nameJa: item.productNameJa, nameZh: item.productNameZh })} · {item.productId}</strong></div>
+                    <div><span>{t('admin.product')}</span><div className={styles.adminOrderProduct}><ProductImage productId={item.productId} productName={item.productName} imageUrl={item.productImageUrl} variant="order" alt="" /><strong>{productName(item.productId, item.productName, { nameJa: item.productNameJa, nameZh: item.productNameZh })} · {item.productId}</strong></div></div>
                     <div><span>{t('admin.unitPrice')}</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
                     <div><span>{t('admin.quantity')}</span><strong>{formatNumber(item.quantity)}</strong></div>
                     <div><span>{t('admin.subtotal')}</span><strong>{formatYen(item.subtotalYen)}</strong></div>

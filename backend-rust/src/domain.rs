@@ -35,6 +35,8 @@ pub struct Product {
     pub name: String,
     pub name_ja: Option<String>,
     pub name_zh: Option<String>,
+    pub category: Option<String>,
+    pub image_url: Option<String>,
     pub price_yen: i64,
     pub stock: i32,
     pub weight_kg: f64,
@@ -74,6 +76,8 @@ impl Product {
             name,
             name_ja: None,
             name_zh: None,
+            category: None,
+            image_url: None,
             price_yen,
             stock,
             weight_kg,
@@ -82,7 +86,7 @@ impl Product {
 
     pub(crate) fn from_csv(line: &str) -> Option<Self> {
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() != 5 && fields.len() != 7 {
+        if fields.len() != 5 && fields.len() != 7 && fields.len() != 9 {
             return None;
         }
         Self::new(
@@ -97,6 +101,17 @@ impl Product {
             fields.get(5).map(|name| (*name).to_owned()),
             fields.get(6).map(|name| (*name).to_owned()),
         )
+        .ok()?
+        .with_metadata(
+            fields
+                .get(7)
+                .filter(|value| !value.is_empty())
+                .map(|value| (*value).to_owned()),
+            fields
+                .get(8)
+                .filter(|value| !value.is_empty())
+                .map(|value| (*value).to_owned()),
+        )
         .ok()
     }
 
@@ -105,7 +120,15 @@ impl Product {
             "{},{},{},{},{}",
             self.id, self.name, self.price_yen, self.stock, self.weight_kg
         );
-        if self.name_ja.is_none() && self.name_zh.is_none() {
+        if self.category.is_some() || self.image_url.is_some() {
+            format!(
+                "{base},{},{},{},{}",
+                self.name_ja.as_deref().unwrap_or(""),
+                self.name_zh.as_deref().unwrap_or(""),
+                self.category.as_deref().unwrap_or(""),
+                self.image_url.as_deref().unwrap_or("")
+            )
+        } else if self.name_ja.is_none() && self.name_zh.is_none() {
             base
         } else {
             format!(
@@ -125,13 +148,38 @@ impl Product {
         self.name_zh = normalize_product_translation(name_zh, "nameZh")?;
         Ok(self)
     }
+
+    pub fn with_metadata(
+        mut self,
+        category: Option<String>,
+        image_url: Option<String>,
+    ) -> Result<Self, DomainError> {
+        if category
+            .as_deref()
+            .is_some_and(|value| !valid_category(value))
+        {
+            return Err(validation("category", "Select a valid product category."));
+        }
+        if image_url
+            .as_deref()
+            .is_some_and(|value| !valid_image_url(value))
+        {
+            return Err(validation("imageUrl", "Select an uploaded product image."));
+        }
+        self.category = category;
+        self.image_url = image_url;
+        Ok(self)
+    }
 }
 
 impl Serialize for Product {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct(
             "Product",
-            6 + usize::from(self.name_ja.is_some()) + usize::from(self.name_zh.is_some()),
+            6 + usize::from(self.name_ja.is_some())
+                + usize::from(self.name_zh.is_some())
+                + usize::from(self.category.is_some())
+                + usize::from(self.image_url.is_some()),
         )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("name", &self.name)?;
@@ -140,6 +188,12 @@ impl Serialize for Product {
         }
         if let Some(name) = &self.name_zh {
             state.serialize_field("nameZh", name)?;
+        }
+        if let Some(category) = &self.category {
+            state.serialize_field("category", category)?;
+        }
+        if let Some(image_url) = &self.image_url {
+            state.serialize_field("imageUrl", image_url)?;
         }
         state.serialize_field("priceYen", &self.price_yen.to_string())?;
         state.serialize_field("stock", &self.stock)?;
@@ -165,6 +219,8 @@ pub struct OrderItem {
     pub product_name_ja: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product_name_zh: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_image_url: Option<String>,
     #[serde(serialize_with = "serialize_yen")]
     pub unit_price_yen: i64,
     pub unit_weight_kg: f64,
@@ -200,6 +256,7 @@ impl OrderItem {
             product_name: product.name.clone(),
             product_name_ja: product.name_ja.clone(),
             product_name_zh: product.name_zh.clone(),
+            product_image_url: product.image_url.clone(),
             unit_price_yen: product.price_yen,
             unit_weight_kg: product.weight_kg,
             quantity,
@@ -217,7 +274,13 @@ impl OrderItem {
             self.unit_weight_kg,
             self.quantity
         );
-        if self.product_name_ja.is_none() && self.product_name_zh.is_none() {
+        if let Some(image_url) = &self.product_image_url {
+            format!(
+                "{base}:{}:{}:{image_url}",
+                self.product_name_ja.as_deref().unwrap_or(""),
+                self.product_name_zh.as_deref().unwrap_or("")
+            )
+        } else if self.product_name_ja.is_none() && self.product_name_zh.is_none() {
             base
         } else {
             format!(
@@ -330,6 +393,31 @@ impl Order {
                     quantity.trim().parse().ok()?,
                 )
                 .ok()?,
+                [
+                    id,
+                    name,
+                    price,
+                    weight,
+                    quantity,
+                    name_ja,
+                    name_zh,
+                    image_url,
+                ] => OrderItem::new(
+                    &Product::new(
+                        id.trim().to_owned(),
+                        name.trim().to_owned(),
+                        price.trim().parse().ok()?,
+                        0,
+                        weight.trim().parse().ok()?,
+                    )
+                    .ok()?
+                    .with_names(Some((*name_ja).to_owned()), Some((*name_zh).to_owned()))
+                    .ok()?
+                    .with_metadata(None, Some((*image_url).to_owned()))
+                    .ok()?,
+                    quantity.trim().parse().ok()?,
+                )
+                .ok()?,
                 _ => return None,
             };
             items.push(item);
@@ -419,6 +507,19 @@ pub fn normalize_product_translation(
 
 pub fn contains_reserved_character(value: &str) -> bool {
     value.contains([',', '|', ':', '\n', '\r'])
+}
+
+pub fn valid_category(value: &str) -> bool {
+    matches!(
+        value,
+        "electronics" | "home" | "kitchen" | "travel" | "sports" | "stationery" | "other"
+    )
+}
+
+pub fn valid_image_url(value: &str) -> bool {
+    value
+        .strip_prefix("/api/product-images/")
+        .is_some_and(|filename| crate::images::image_mime(filename).is_some())
 }
 
 pub fn positive_finite(value: f64) -> bool {

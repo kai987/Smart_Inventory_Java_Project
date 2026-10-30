@@ -1,7 +1,7 @@
-import type { Product } from '../../api/types'
+import type { Product, ProductCategory } from '../../api/types'
 import type { AppLanguage } from '../../i18n/language'
 
-export type ProductCategory = 'electronics' | 'home' | 'kitchen' | 'travel' | 'sports' | 'stationery' | 'other'
+export type { ProductCategory } from '../../api/types'
 export type ProductCategoryFilter = 'all' | ProductCategory
 export type ProductSort = 'default' | 'priceAsc' | 'priceDesc'
 export type ProductNameTranslations = { nameJa?: string | undefined; nameZh?: string | undefined }
@@ -17,9 +17,8 @@ export const productCategoryLabelKeys = {
   other: 'products.categoryOther',
 } as const
 
-export const productCategories: readonly ProductCategoryFilter[] = [
-  'all', 'electronics', 'home', 'kitchen', 'travel', 'sports', 'stationery', 'other',
-]
+export const productCategoryValues = ['electronics', 'home', 'kitchen', 'travel', 'sports', 'stationery', 'other'] as const
+export const productCategories: readonly ProductCategoryFilter[] = ['all', ...productCategoryValues]
 
 type CatalogMetadata = { canonicalName: string; category: ProductCategory; jaName: string; zhName: string }
 
@@ -56,7 +55,12 @@ function getMatchingMetadata(product: Pick<Product, 'id' | 'name'>): CatalogMeta
   return metadata?.canonicalName.toLowerCase() === product.name.trim().toLowerCase() ? metadata : undefined
 }
 
-export function getProductCategory(product: Pick<Product, 'id' | 'name'>): ProductCategory {
+export function hasCatalogProductIdentity(productId: string, productName: string): boolean {
+  return getMatchingMetadata({ id: productId, name: productName }) !== undefined
+}
+
+export function getProductCategory(product: Pick<Product, 'id' | 'name' | 'category'>): ProductCategory {
+  if (product.category !== undefined && productCategories.includes(product.category)) return product.category
   return getMatchingMetadata(product)?.category ?? 'other'
 }
 

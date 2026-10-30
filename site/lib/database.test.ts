@@ -201,7 +201,7 @@ describe('versioned catalog expansion', () => {
     ]);
     await ensureExpandedCatalog(context.database!);
     expect(products()).toEqual(catalogExpansionProducts.map(([id, name, price_yen, stock, weight_kg]) => ({
-      id, name, price_yen, stock, weight_kg, name_ja: null, name_zh: null,
+      id, name, price_yen, stock, weight_kg, name_ja: null, name_zh: null, category: null, image_url: null,
     })));
     expect(catalogExpansionProducts.map(([id]) => id)).toEqual(
       Array.from({ length: 20 }, (_, index) => `P${String(index + 5).padStart(3, '0')}`),

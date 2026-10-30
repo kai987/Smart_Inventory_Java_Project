@@ -1,5 +1,13 @@
 export type Role = 'ADMIN' | 'CUSTOMER';
 
+export const PRODUCT_CATEGORIES = ['electronics', 'home', 'kitchen', 'travel', 'sports', 'stationery', 'other'] as const;
+export type ProductCategory = typeof PRODUCT_CATEGORIES[number];
+const productImageUrl = /^\/api\/product-images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$/;
+
+export function isProductImageUrl(value: unknown): value is string {
+  return typeof value === 'string' && productImageUrl.test(value);
+}
+
 export type FieldError = {
   field: string;
   message: string;
@@ -10,6 +18,8 @@ export type ProductRecord = {
   name: string;
   name_ja?: string | null;
   name_zh?: string | null;
+  category?: ProductCategory | null;
+  image_url?: string | null;
   price_yen: string;
   stock: number;
   weight_kg: number;
@@ -25,6 +35,7 @@ export type CalculatedItem = {
   productName: string;
   productNameJa?: string;
   productNameZh?: string;
+  productImageUrl?: string;
   unitPriceYen: string;
   unitWeightKg: number;
   quantity: number;
@@ -90,6 +101,24 @@ export function normalizedProductNames(input: { name: string; nameJa?: string | 
   };
 }
 
+export function productDetailErrors(value: unknown, requireCategory = true): FieldError[] {
+  const errors = productNameErrors(value);
+  if (typeof value !== 'object' || value === null) return errors;
+  return [...errors, ...productMediaErrors(value as Record<string, unknown>, requireCategory)];
+}
+
+function productMediaErrors(input: Record<string, unknown>, requireCategory: boolean): FieldError[] {
+  const errors: FieldError[] = [];
+  if ((requireCategory || input.category !== undefined)
+    && (typeof input.category !== 'string' || !(PRODUCT_CATEGORIES as readonly string[]).includes(input.category))) {
+    errors.push({ field: 'category', message: 'Choose a supported product category.' });
+  }
+  if (input.imageUrl !== undefined && input.imageUrl !== null && !isProductImageUrl(input.imageUrl)) {
+    errors.push({ field: 'imageUrl', message: 'Use an uploaded product image.' });
+  }
+  return errors;
+}
+
 export function productErrors(value: unknown): FieldError[] {
   if (typeof value !== 'object' || value === null) {
     return [{ field: 'request', message: 'A JSON request body is required.' }];
@@ -100,6 +129,7 @@ export function productErrors(value: unknown): FieldError[] {
     errors.push({ field: 'id', message: 'Product ID must use P followed by three digits.' });
   }
   errors.push(...productNameErrors(value));
+  errors.push(...productMediaErrors(input, false));
   if (typeof input.priceYen !== 'string' || !/^[1-9]\d*$/.test(input.priceYen)) {
     errors.push({ field: 'priceYen', message: 'Price must be a positive whole-yen amount.' });
   } else {
@@ -184,6 +214,7 @@ export function calculateOrder(products: ProductRecord[], requestedItems: Reques
       productName: product.name,
       ...(product.name_ja ? { productNameJa: product.name_ja } : {}),
       ...(product.name_zh ? { productNameZh: product.name_zh } : {}),
+      ...(product.image_url ? { productImageUrl: product.image_url } : {}),
       unitPriceYen: product.price_yen,
       unitWeightKg: product.weight_kg,
       quantity: requested.quantity,

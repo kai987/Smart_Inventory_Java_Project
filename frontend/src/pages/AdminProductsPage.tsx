@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CanceledError } from 'axios'
 import type { TFunction } from 'i18next'
-import { Languages, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -9,7 +10,7 @@ import { z } from 'zod'
 import { adminApi } from '../api/adminApi'
 import { toApiError } from '../api/apiError'
 import { productApi } from '../api/productApi'
-import type { CreateProductRequest, Product } from '../api/types'
+import type { CreateProductRequest, Product, UpdateProductDetailsRequest, User } from '../api/types'
 import { queryKeys } from '../app/queryClient'
 import { useAuth } from '../auth/AuthProvider'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
@@ -18,7 +19,9 @@ import { Button } from '../components/ui/Button'
 import { Dialog } from '../components/ui/Dialog'
 import { Field } from '../components/ui/Field'
 import { ProductImage } from '../features/products/ProductImage'
-import { matchesProductSearch } from '../features/products/productCatalog'
+import { ProductImageField } from '../features/products/ProductImageField'
+import { getProductCategory, matchesProductSearch, productCategoryLabelKeys, productCategoryValues } from '../features/products/productCatalog'
+import { useProductImageDraft } from '../features/products/useProductImageDraft'
 import { useProductNames } from '../features/products/useProductNames'
 import { translateApiError, translateApiFieldError } from '../i18n/apiErrorLocalization'
 import { useLocaleFormatters } from '../i18n/formatters'
@@ -46,6 +49,7 @@ export function createProductNamesSchema(t: TFunction) {
 
 export function createProductSchema(t: TFunction) {
   return createProductNamesSchema(t).extend({
+    category: z.enum(productCategoryValues, { error: t('validation.productCategoryInvalid') }),
     id: z.string().regex(/^P\d{3}$/, t('validation.productIdPattern')),
     priceYen: z.string().regex(/^[1-9]\d*$/, t('validation.pricePositive')).refine((value) => {
       try { return BigInt(value) <= maxLong } catch { return false }
@@ -67,10 +71,14 @@ export function createStockSchema(t: TFunction) {
 }
 
 type ProductFormValues = z.infer<ReturnType<typeof createProductSchema>>
-type ProductNamesValues = z.infer<ReturnType<typeof createProductNamesSchema>>
+function createProductDetailsSchema(t: TFunction) {
+  return createProductNamesSchema(t).extend({ category: z.enum(productCategoryValues, { error: t('validation.productCategoryInvalid') }) })
+}
+type ProductDetailsValues = z.infer<ReturnType<typeof createProductDetailsSchema>>
 type StockValues = z.infer<ReturnType<typeof createStockSchema>>
-const productFields = ['id', 'name', 'nameJa', 'nameZh', 'priceYen', 'stock', 'weightKg'] as const
+const productFields = ['id', 'name', 'nameJa', 'nameZh', 'category', 'priceYen', 'stock', 'weightKg'] as const
 type ProductField = typeof productFields[number]
+type ProductSubmission<Request> = { request: Request; sessionUser: User; sessionVersion: number }
 
 function isProductField(value: string): value is ProductField {
   return (productFields as readonly string[]).includes(value)
@@ -78,7 +86,8 @@ function isProductField(value: string): value is ProductField {
 
 function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const { t, i18n } = useTranslation()
-  const { user, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
+  const { user, getSessionVersion, isCurrentSession, runProtectedRequest } = useAuth()
+  const image = useProductImageDraft()
   const resolvedLanguage = i18n.resolvedLanguage
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
   const schema = useMemo(() => {
@@ -87,10 +96,17 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
   }, [resolvedLanguage, t])
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { id: '', name: '', nameJa: '', nameZh: '', priceYen: '', stock: '0', weightKg: '' },
+    defaultValues: { id: '', name: '', nameJa: '', nameZh: '', category: 'other', priceYen: '', stock: '0', weightKg: '' },
   })
   const { clearErrors } = form
-  const mutation = useMutation({ mutationFn: (request: CreateProductRequest) => runProtectedRequest(() => productApi.create(request, getSessionSignal())) })
+  const mutation = useMutation({
+    mutationFn: ({ request, sessionUser, sessionVersion }: ProductSubmission<CreateProductRequest>) => runProtectedRequest(async (signal) => {
+      const imageUrl = await image.resolveImageUrl(signal)
+      signal.throwIfAborted()
+      if (!isCurrentSession(sessionUser, sessionVersion)) throw new CanceledError('The administrator session changed')
+      return productApi.create({ ...request, ...(imageUrl === null ? {} : { imageUrl }) }, signal)
+    }),
+  })
 
   useEffect(() => {
     clearErrors()
@@ -99,17 +115,19 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
   const close = () => {
     if (mutation.isPending) return
     form.reset()
+    image.reset()
     setSubmitError(null)
     onClose()
   }
 
   const submit = form.handleSubmit(async (values) => {
-    if (user?.role !== 'ADMIN') return
+    if (user?.role !== 'ADMIN' || image.errorKey !== null) return
     const sessionVersion = getSessionVersion()
     setSubmitError(null)
     const request: CreateProductRequest = {
       id: values.id,
       name: values.name.trim(),
+      category: values.category,
       ...(values.nameJa?.trim() ? { nameJa: values.nameJa.trim() } : {}),
       ...(values.nameZh?.trim() ? { nameZh: values.nameZh.trim() } : {}),
       priceYen: values.priceYen,
@@ -117,9 +135,10 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
       weightKg: Number(values.weightKg),
     }
     try {
-      await mutation.mutateAsync(request)
+      await mutation.mutateAsync({ request, sessionUser: user, sessionVersion })
       if (!isCurrentSession(user, sessionVersion)) return
       form.reset()
+      image.reset()
       onCreated()
       onClose()
     } catch (error: unknown) {
@@ -144,44 +163,57 @@ function AddProductDialog({ open, onClose, onCreated }: { open: boolean; onClose
           <Field label={t('admin.productNameEnglish')} placeholder={t('admin.productNamePlaceholder')} hint={t('admin.productNameFallbackHint')} error={form.formState.errors.name?.message} {...form.register('name')} />
           <Field label={t('admin.productNameJapanese')} lang="ja" maxLength={100} error={form.formState.errors.nameJa?.message} {...form.register('nameJa')} />
           <Field label={t('admin.productNameChinese')} lang="zh-CN" maxLength={100} error={form.formState.errors.nameZh?.message} {...form.register('nameZh')} />
+          <div className={styles.categoryField}>
+            <label htmlFor="add-product-category">{t('admin.productCategory')}</label>
+            <select id="add-product-category" disabled={mutation.isPending} {...form.register('category')}>
+              {productCategoryValues.map((category) => <option key={category} value={category}>{t(productCategoryLabelKeys[category])}</option>)}
+            </select>
+          </div>
           <Field label={t('admin.priceJpy')} inputMode="numeric" placeholder="9800" error={form.formState.errors.priceYen?.message} {...form.register('priceYen')} />
           <Field id="product-stock" label={t('admin.stock')} inputMode="numeric" placeholder="12" error={form.formState.errors.stock?.message} {...form.register('stock')} />
           <Field label={t('admin.weightKg')} inputMode="decimal" placeholder="0.35" error={form.formState.errors.weightKg?.message} {...form.register('weightKg')} />
+          <ProductImageField id="add-product-image" image={image} disabled={mutation.isPending} />
         </div>
         <div className={pageStyles.dialogActions}>
           <Button type="button" variant="secondary" onClick={close} disabled={mutation.isPending}>{t('common.cancel')}</Button>
-          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t('admin.addingProduct') : t('admin.addProduct')}</Button>
+          <Button type="submit" disabled={mutation.isPending || image.errorKey !== null}>{image.isUploading ? t('admin.uploadingProductImage') : mutation.isPending ? t('admin.addingProduct') : t('admin.addProduct')}</Button>
         </div>
       </form>
     </Dialog>
   )
 }
 
-function ProductNamesDialog({ product, onClose, onUpdated }: { product: Product; onClose: () => void; onUpdated: () => void }) {
+function ProductDetailsDialog({ product, onClose, onUpdated }: { product: Product; onClose: () => void; onUpdated: () => void }) {
   const { t, i18n } = useTranslation()
-  const { user, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
+  const { user, getSessionVersion, isCurrentSession, runProtectedRequest } = useAuth()
+  const image = useProductImageDraft(product.imageUrl)
   const resolvedLanguage = i18n.resolvedLanguage
   const [submitError, setSubmitError] = useState<ReturnType<typeof toApiError> | null>(null)
   const schema = useMemo(() => {
     void resolvedLanguage
-    return createProductNamesSchema(t)
+    return createProductDetailsSchema(t)
   }, [resolvedLanguage, t])
-  const form = useForm<ProductNamesValues>({
+  const form = useForm<ProductDetailsValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: product.name, nameJa: product.nameJa ?? '', nameZh: product.nameZh ?? '' },
+    defaultValues: { name: product.name, nameJa: product.nameJa ?? '', nameZh: product.nameZh ?? '', category: getProductCategory(product) },
   })
   const { clearErrors } = form
   const mutation = useMutation({
-    mutationFn: (names: Pick<CreateProductRequest, 'name' | 'nameJa' | 'nameZh'>) => runProtectedRequest(() => productApi.updateNames(product.id, names, getSessionSignal())),
+    mutationFn: ({ request, sessionUser, sessionVersion }: ProductSubmission<UpdateProductDetailsRequest>) => runProtectedRequest(async (signal) => {
+      const imageUrl = await image.resolveImageUrl(signal)
+      signal.throwIfAborted()
+      if (!isCurrentSession(sessionUser, sessionVersion)) throw new CanceledError('The administrator session changed')
+      return productApi.updateDetails(product.id, { ...request, imageUrl }, signal)
+    }),
   })
   useEffect(() => { clearErrors() }, [clearErrors, resolvedLanguage])
   const close = () => { if (!mutation.isPending) onClose() }
   const submit = form.handleSubmit(async (values) => {
-    if (user?.role !== 'ADMIN') return
+    if (user?.role !== 'ADMIN' || image.errorKey !== null) return
     const sessionVersion = getSessionVersion()
     setSubmitError(null)
     try {
-      await mutation.mutateAsync({ name: values.name.trim(), nameJa: values.nameJa?.trim() ?? '', nameZh: values.nameZh?.trim() ?? '' })
+      await mutation.mutateAsync({ request: { name: values.name.trim(), nameJa: values.nameJa?.trim() ?? '', nameZh: values.nameZh?.trim() ?? '', category: values.category }, sessionUser: user, sessionVersion })
       if (!isCurrentSession(user, sessionVersion)) return
       onUpdated()
       onClose()
@@ -190,7 +222,7 @@ function ProductNamesDialog({ product, onClose, onUpdated }: { product: Product;
       const apiError = toApiError(error)
       for (const fieldError of apiError.fieldErrors) {
         const field = fieldError.field.replace(/^request\./, '')
-        if (field === 'name' || field === 'nameJa' || field === 'nameZh') {
+        if (field === 'name' || field === 'nameJa' || field === 'nameZh' || field === 'category') {
           form.setError(field, { type: 'server', message: translateApiFieldError(fieldError, t) })
         }
       }
@@ -198,17 +230,24 @@ function ProductNamesDialog({ product, onClose, onUpdated }: { product: Product;
     }
   })
   return (
-    <Dialog open title={t('admin.editProductNames')} description={t('admin.editProductNamesDescription', { productId: product.id })} onClose={close}>
+    <Dialog open title={t('admin.editProductDetails')} description={t('admin.editProductDetailsDescription', { productId: product.id })} onClose={close}>
       <form onSubmit={submit} noValidate>
         <div className={pageStyles.formGrid}>
           {submitError === null ? null : <p className={`${pageStyles.formMessage} ${pageStyles.formMessageWide}`} role="alert">{translateApiError(submitError, t)}</p>}
           <Field id="edit-product-name" label={t('admin.productNameEnglish')} hint={t('admin.productNameFallbackHint')} error={form.formState.errors.name?.message} {...form.register('name')} />
           <Field id="edit-product-name-ja" label={t('admin.productNameJapanese')} lang="ja" maxLength={100} error={form.formState.errors.nameJa?.message} {...form.register('nameJa')} />
           <Field id="edit-product-name-zh" label={t('admin.productNameChinese')} lang="zh-CN" maxLength={100} error={form.formState.errors.nameZh?.message} {...form.register('nameZh')} />
+          <div className={styles.categoryField}>
+            <label htmlFor="edit-product-category">{t('admin.productCategory')}</label>
+            <select id="edit-product-category" disabled={mutation.isPending} {...form.register('category')}>
+              {productCategoryValues.map((category) => <option key={category} value={category}>{t(productCategoryLabelKeys[category])}</option>)}
+            </select>
+          </div>
+          <ProductImageField id="edit-product-image" image={image} disabled={mutation.isPending} />
         </div>
         <div className={pageStyles.dialogActions}>
           <Button type="button" variant="secondary" onClick={close} disabled={mutation.isPending}>{t('common.cancel')}</Button>
-          <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t('admin.saving') : t('admin.saveProductNames')}</Button>
+          <Button type="submit" disabled={mutation.isPending || image.errorKey !== null}>{image.isUploading ? t('admin.uploadingProductImage') : mutation.isPending ? t('admin.saving') : t('admin.saveProductDetails')}</Button>
         </div>
       </form>
     </Dialog>
@@ -350,7 +389,7 @@ export default function AdminProductsPage() {
       {filteredProducts.length > 0 ? (
         <div className={styles.tableSurface}>
           <table className={styles.table}>
-            <thead><tr><th>{t('admin.productId')}</th><th>{t('admin.productName')}</th><th>{t('admin.price')}</th><th>{t('admin.stock')}</th><th>{t('admin.weight')}</th><th>{t('admin.status')}</th><th>{t('admin.actions')}</th></tr></thead>
+            <thead><tr><th>{t('admin.productId')}</th><th>{t('admin.productName')}</th><th>{t('admin.productCategory')}</th><th>{t('admin.price')}</th><th>{t('admin.stock')}</th><th>{t('admin.weight')}</th><th>{t('admin.status')}</th><th>{t('admin.actions')}</th></tr></thead>
             <tbody>
               {filteredProducts.map((product) => {
                 const displayName = productName(product.id, product.name, product)
@@ -362,16 +401,17 @@ export default function AdminProductsPage() {
                     <td className={styles.mono}>{product.id}</td>
                     <td className={styles.nameCell}>
                       <div className={styles.productIdentity}>
-                        <ProductImage productId={product.id} productName={product.name} variant="admin" alt="" />
+                        <ProductImage productId={product.id} productName={product.name} imageUrl={product.imageUrl} variant="admin" alt="" />
                         <span>{displayName}</span>
                       </div>
                     </td>
+                    <td>{t(productCategoryLabelKeys[getProductCategory(product)])}</td>
                     <td>{formatYen(product.priceYen)}</td>
                     <td>{formatNumber(product.stock)}</td>
                     <td>{formatWeight(product.weightKg)}</td>
                     <td><span className={`${styles.status} ${statusClass}`}>{status}</span></td>
                     <td><div className={styles.rowActions}>
-                      <button type="button" onClick={() => setNamesProduct(product)} aria-label={t('admin.editProductNamesFor', { productName: displayName })}><Languages /></button>
+                      <button type="button" onClick={() => setNamesProduct(product)} aria-label={t('admin.editProductDetailsFor', { productName: displayName })} title={t('admin.editProductDetailsFor', { productName: displayName })}><Settings2 /></button>
                       <button type="button" onClick={() => setStockProduct(product)} aria-label={t('admin.updateStockFor', { productName: displayName })}><Pencil /></button>
                       <button type="button" onClick={() => setDeleteProduct(product)} aria-label={t('admin.deleteProductNamed', { productName: displayName })}><Trash2 /></button>
                     </div></td>
@@ -385,7 +425,7 @@ export default function AdminProductsPage() {
 
       <AddProductDialog open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void refreshProducts(t('admin.productAdded'))} />
       <StockDialog product={stockProduct} onClose={() => setStockProduct(null)} onUpdated={() => void refreshProducts(t('admin.stockUpdated'))} />
-      {namesProduct === null ? null : <ProductNamesDialog key={namesProduct.id} product={namesProduct} onClose={() => setNamesProduct(null)} onUpdated={() => void refreshProducts(t('admin.productNamesUpdated'))} />}
+      {namesProduct === null ? null : <ProductDetailsDialog key={namesProduct.id} product={namesProduct} onClose={() => setNamesProduct(null)} onUpdated={() => void refreshProducts(t('admin.productDetailsUpdated'))} />}
       <Dialog
         open={deleteProduct !== null}
         title={t('admin.deleteProductTitle')}

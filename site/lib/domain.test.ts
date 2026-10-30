@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateOrder, normalizedProductNames, normalizeRequestedItems, productErrors, productNameErrors, registrationErrors } from './domain';
+import { calculateOrder, normalizedProductNames, normalizeRequestedItems, productDetailErrors, productErrors, productNameErrors, registrationErrors } from './domain';
 
 describe('Sites domain rules', () => {
   it('merges duplicate order rows before calculation', () => {
@@ -64,5 +64,23 @@ describe('Sites domain rules', () => {
     const untranslated = calculateOrder([{ ...product, name_ja: null, name_zh: '' }], [{ productId: 'P900', quantity: 1 }]).items[0];
     expect(untranslated).not.toHaveProperty('productNameJa');
     expect(untranslated).not.toHaveProperty('productNameZh');
+  });
+
+  it('validates explicit product categories and strictly internal image URLs', () => {
+    const product = { id: 'P900', name: 'Mug', priceYen: '900', stock: 3, weightKg: 0.2 };
+    expect(productErrors(product)).toEqual([]);
+    expect(productErrors({ ...product, category: 'kitchen', imageUrl: null })).toEqual([]);
+    const url = '/api/product-images/00000000-0000-4000-8000-000000000000.png';
+    expect(productDetailErrors({ name: 'Mug', category: 'kitchen', imageUrl: url })).toEqual([]);
+    expect(productDetailErrors({ name: 'Mug' }).map((error) => error.field)).toEqual(['category']);
+    expect(productDetailErrors({ name: 'Mug', category: null, imageUrl: 'https://example.com/p.png' }).map((error) => error.field)).toEqual(['category', 'imageUrl']);
+    expect(productDetailErrors({ name: 'Mug', category: 'home', imageUrl: {} }).map((error) => error.field)).toEqual(['imageUrl']);
+  });
+
+  it('copies a custom image into order snapshots without adding image fields to legacy items', () => {
+    const image_url = '/api/product-images/00000000-0000-4000-8000-000000000000.webp';
+    const product = { id: 'P900', name: 'Mug', price_yen: '900', stock: 3, weight_kg: 0.2, image_url };
+    expect(calculateOrder([product], [{ productId: 'P900', quantity: 1 }]).items[0]).toMatchObject({ productImageUrl: image_url });
+    expect(calculateOrder([{ ...product, image_url: null }], [{ productId: 'P900', quantity: 1 }]).items[0]).not.toHaveProperty('productImageUrl');
   });
 });

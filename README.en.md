@@ -20,7 +20,9 @@ The online version uses the React interface with a **TypeScript/Vinext API and D
 
 The online catalog includes 24 demo products across electronics, home, kitchen, travel, sports, and stationery. Browse category cards, combine category/search/stock filters, and sort by price. A one-time, insert-only catalog expansion preserves existing stock and orders; local Java/Rust runtime data and the historical console dataset remain unchanged.
 
-All 24 standard product names follow the selected English, Japanese, or Simplified Chinese interface language across the catalog, cart, saved orders, and admin screens. Administrators can save a required English/default name plus optional Japanese and Chinese names when adding custom products, or use the row's Edit names action later. Missing translations fall back to the default name. Search accepts all saved names and product IDs. Orders preserve the names from checkout, even after a product is renamed or deleted. Switching language or editing names never changes prices or stock.
+All 24 standard product names follow the selected English, Japanese, or Simplified Chinese interface language across the catalog, cart, saved orders, and admin screens. Administrators can save a required English/default name plus optional Japanese and Chinese names when adding custom products, or use the row's Edit details action later. Missing translations fall back to the default name. Search accepts all saved names and product IDs. Orders preserve the names from checkout, even after a product is renamed or deleted. Switching language or editing names never changes prices or stock.
+
+Custom products also support a saved category and one uploaded PNG, JPEG, or WebP image (up to 2 MiB). The product-details editor can change names, category, and image together without changing stock or price. Selected files are previewed locally and uploaded only when saving; uploaded images are publicly visible. Online files use R2, while local Java/Rust files stay in their separate runtime data directories. Order snapshots keep the original image reference, so replacing or removing a catalog image does not rewrite past orders. Existing standard product photos remain the fallback when no custom image is set.
 
 The public demo accounts allow customers to place orders and administrators to modify products and stock. Other visitors can change the shared demo data. No real payments are processed. Do not enter real personal information, real customer data, or passwords reused on other services. See the Demo accounts section below for the published credentials.
 
@@ -321,6 +323,9 @@ All endpoints use JSON under `/api`. Yen values are decimal strings in API messa
 | `POST` | `/api/products` | Admin + CSRF | Create a product |
 | `PATCH` | `/api/products/{id}/stock` | Admin + CSRF | Replace current stock quantity |
 | `PATCH` | `/api/products/{id}/names` | Admin + CSRF | Update default, Japanese, and Chinese names |
+| `PATCH` | `/api/products/{id}/details` | Admin + CSRF | Update names, category, and custom image together |
+| `POST` | `/api/product-images` | Admin + CSRF | Upload one raw PNG, JPEG, or WebP body, at most 2 MiB |
+| `GET` | `/api/product-images/{filename}` | Public | Read an immutable uploaded product image |
 | `DELETE` | `/api/products/{id}` | Admin + CSRF | Delete a product without damaging order history |
 | `POST` | `/api/orders` | Customer + CSRF | Create an order from current inventory |
 | `GET` | `/api/orders/me` | Customer | Read the current customer's orders |

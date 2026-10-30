@@ -186,6 +186,8 @@ pub(crate) async fn session_middleware(
     next: Next,
 ) -> Response {
     let path = request.uri().path().to_owned();
+    let public_image_read = path.starts_with("/api/product-images/")
+        && matches!(*request.method(), Method::GET | Method::HEAD);
     let id = cookie_session_id(request.headers());
     let context = match state.sessions.lookup(id.as_deref()) {
         Ok(context) => context,
@@ -219,7 +221,9 @@ pub(crate) async fn session_middleware(
     }
     request.extensions_mut().insert(context);
     let mut response = next.run(request).await;
-    if path == "/api" || path.starts_with("/api/") {
+    if (path == "/api" || path.starts_with("/api/"))
+        && !(public_image_read && response.status().is_success())
+    {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

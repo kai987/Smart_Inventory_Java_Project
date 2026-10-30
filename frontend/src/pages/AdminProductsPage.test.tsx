@@ -85,10 +85,10 @@ describe('AdminProductsPage', () => {
       })
     }
 
-    await user.selectOptions(screen.getByRole('combobox'), 'ja')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'ja')
     expect(await screen.findByRole('cell', { name: 'デスクライト' })).toBeInTheDocument()
     expect(search).toHaveValue('デスクライト')
-    await user.selectOptions(screen.getByRole('combobox'), 'zh-CN')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'zh-CN')
     expect(await screen.findByRole('cell', { name: '台灯' })).toBeInTheDocument()
     expect(list).toHaveBeenCalledTimes(1)
     expect(list).toHaveBeenCalledWith({ q: '', inStockOnly: false }, expect.any(AbortSignal))
@@ -124,11 +124,11 @@ describe('AdminProductsPage', () => {
     await user.clear(stock)
     await user.type(stock, '19')
 
-    await user.selectOptions(screen.getByRole('combobox'), 'ja')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'ja')
     const japaneseDialog = screen.getByRole('dialog', { name: '在庫を更新' })
     expect(japaneseDialog).toHaveAccessibleDescription('デスクライト、P005')
     expect(within(japaneseDialog).getByLabelText('在庫')).toHaveValue('19')
-    await user.selectOptions(screen.getByRole('combobox'), 'zh-CN')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'zh-CN')
     const chineseDialog = screen.getByRole('dialog', { name: '更新库存' })
     expect(chineseDialog).toHaveAccessibleDescription('台灯，P005')
     expect(within(chineseDialog).getByLabelText('库存')).toHaveValue('19')
@@ -144,7 +144,7 @@ describe('AdminProductsPage', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Delete Desk Lamp' }))
     expect(screen.getByText('Delete Desk Lamp (P005)?')).toBeInTheDocument()
-    await user.selectOptions(screen.getByRole('combobox'), 'zh-CN')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'zh-CN')
     expect(screen.getByText('删除 台灯（P005）？')).toBeInTheDocument()
     expect(screen.queryByText('Delete Desk Lamp (P005)?')).not.toBeInTheDocument()
     await user.click(within(screen.getByRole('dialog', { name: '删除商品？' })).getByRole('button', { name: '删除商品' }))
@@ -168,7 +168,7 @@ describe('AdminProductsPage', () => {
     await user.type(within(dialog).getByLabelText('重量（kg）'), '0.3')
     await user.click(within(dialog).getByRole('button', { name: '商品を追加' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      id: 'P900', name: '私のランプ / 手工台灯', priceYen: '2600', stock: 28, weightKg: 0.3,
+      id: 'P900', name: '私のランプ / 手工台灯', category: 'other', priceYen: '2600', stock: 28, weightKg: 0.3,
     }, expect.any(AbortSignal)))
   })
 
@@ -187,34 +187,34 @@ describe('AdminProductsPage', () => {
     await user.type(within(dialog).getByLabelText('Chinese name (optional)'), ' 陶瓷马克杯 ')
     await user.type(within(dialog).getByLabelText('Price (JPY)'), '2600')
     await user.type(within(dialog).getByLabelText('Weight (kg)'), '0.3')
-    await user.selectOptions(screen.getByRole('combobox'), 'ja')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'ja')
     const japaneseDialog = screen.getByRole('dialog', { name: '商品を追加' })
     expect(within(japaneseDialog).getByLabelText('日本語名（任意）')).toHaveValue(' 陶器マグ ')
     expect(within(japaneseDialog).getByLabelText('中国語名（任意）')).toHaveValue(' 陶瓷马克杯 ')
     await user.click(within(japaneseDialog).getByRole('button', { name: '商品を追加' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      id: 'P900', name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯', priceYen: '2600', stock: 0, weightKg: 0.3,
+      id: 'P900', name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯', category: 'other', priceYen: '2600', stock: 0, weightKg: 0.3,
     }, expect.any(AbortSignal)))
   })
 
   it('edits saved multilingual names without touching stock, price, or old order snapshots', async () => {
     const translated = { ...customProduct, name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯' }
     mockCatalog([translated])
-    const update = vi.spyOn(productApi, 'updateNames').mockResolvedValue({ ...translated, nameZh: '手工陶瓷杯' })
+    const update = vi.spyOn(productApi, 'updateDetails').mockResolvedValue({ ...translated, nameZh: '手工陶瓷杯' })
     renderWithProviders(<><LanguageSelect /><AdminProductsPage /></>, { user: { username: 'admin', role: 'ADMIN' } })
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Edit names for Ceramic Mug' }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit product names' })
+    await user.click(await screen.findByRole('button', { name: 'Edit details for Ceramic Mug' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit product details' })
     expect(within(dialog).getByLabelText('Japanese name (optional)')).toHaveValue('陶器マグ')
     await user.clear(within(dialog).getByLabelText('Chinese name (optional)'))
     await user.type(within(dialog).getByLabelText('Chinese name (optional)'), '手工陶瓷杯')
-    await user.selectOptions(screen.getByRole('combobox'), 'zh-CN')
-    const chineseDialog = screen.getByRole('dialog', { name: '编辑商品名称' })
+    await user.selectOptions(screen.getByRole('combobox', { name: /^(Language|言語|语言)$/ }), 'zh-CN')
+    const chineseDialog = screen.getByRole('dialog', { name: '编辑商品信息' })
     expect(within(chineseDialog).getByLabelText('中文名称（选填）')).toHaveValue('手工陶瓷杯')
     expect(screen.getByRole('cell', { name: '陶瓷马克杯' })).toBeInTheDocument()
-    await user.click(within(chineseDialog).getByRole('button', { name: '保存名称' }))
+    await user.click(within(chineseDialog).getByRole('button', { name: '保存商品信息' }))
     await waitFor(() => expect(update).toHaveBeenCalledWith('P900', {
-      name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '手工陶瓷杯',
+      name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '手工陶瓷杯', category: 'other', imageUrl: null,
     }, expect.any(AbortSignal)))
     expect(translated).toMatchObject({ stock: 3, priceYen: '2600', nameZh: '陶瓷马克杯' })
   })
@@ -222,21 +222,21 @@ describe('AdminProductsPage', () => {
   it('validates optional translations and can clear a saved translation', async () => {
     const translated = { ...customProduct, nameJa: '陶器マグ', nameZh: '陶瓷马克杯' }
     mockCatalog([translated])
-    const update = vi.spyOn(productApi, 'updateNames').mockResolvedValue(customProduct)
+    const update = vi.spyOn(productApi, 'updateDetails').mockResolvedValue(customProduct)
     renderWithProviders(<AdminProductsPage />, { user: { username: 'admin', role: 'ADMIN' } })
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: `Edit names for ${customProduct.name}` }))
-    const dialog = screen.getByRole('dialog', { name: 'Edit product names' })
+    await user.click(await screen.findByRole('button', { name: `Edit details for ${customProduct.name}` }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit product details' })
     const japanese = within(dialog).getByLabelText('Japanese name (optional)')
     await user.clear(japanese)
     await user.type(japanese, 'Invalid|Name')
-    await user.click(within(dialog).getByRole('button', { name: 'Save names' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save details' }))
     expect(await within(dialog).findByText('Name contains a reserved character.')).toBeInTheDocument()
     expect(update).not.toHaveBeenCalled()
     await user.clear(japanese)
-    await user.click(within(dialog).getByRole('button', { name: 'Save names' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save details' }))
     await waitFor(() => expect(update).toHaveBeenCalledWith('P900', {
-      name: customProduct.name, nameJa: '', nameZh: '陶瓷马克杯',
+      name: customProduct.name, nameJa: '', nameZh: '陶瓷马克杯', category: 'other', imageUrl: null,
     }, expect.any(AbortSignal)))
   })
 

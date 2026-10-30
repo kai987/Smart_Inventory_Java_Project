@@ -1,6 +1,7 @@
 export type Role = 'ADMIN' | 'CUSTOMER'
 
 export type YenAmount = string
+export type ProductCategory = 'electronics' | 'home' | 'kitchen' | 'travel' | 'sports' | 'stationery' | 'other'
 
 export type User = {
   username: string
@@ -18,6 +19,8 @@ export type Product = {
   name: string
   nameJa?: string
   nameZh?: string
+  category?: ProductCategory
+  imageUrl?: string
   priceYen: YenAmount
   stock: number
   weightKg: number
@@ -34,6 +37,7 @@ export type OrderItem = {
   productName: string
   productNameJa?: string
   productNameZh?: string
+  productImageUrl?: string
   unitPriceYen: YenAmount
   unitWeightKg: number
   quantity: number
@@ -96,9 +100,16 @@ export type CreateProductRequest = {
   name: string
   nameJa?: string
   nameZh?: string
+  category?: ProductCategory
+  imageUrl?: string
   priceYen: YenAmount
   stock: number
   weightKg: number
+}
+
+export type UpdateProductDetailsRequest = Pick<CreateProductRequest, 'name' | 'nameJa' | 'nameZh'> & {
+  category: ProductCategory
+  imageUrl?: string | null
 }
 
 export type CreateOrderRequest = {

@@ -11,5 +11,6 @@ public record OrderItemResponse(
         String subtotalYen,
         double totalWeightKg,
         @JsonInclude(JsonInclude.Include.NON_NULL) String productNameJa,
-        @JsonInclude(JsonInclude.Include.NON_NULL) String productNameZh) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) String productNameZh,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String productImageUrl) {
 }

@@ -237,4 +237,16 @@ describe('CartPage', () => {
     expect(window.localStorage.getItem(CART_STORAGE_KEY)).toBe(originalCart)
     expect(list).toHaveBeenCalledTimes(1)
   })
+
+  it('uses the uploaded custom product image without changing cart identity or totals', async () => {
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ version: 1, items: [{ productId: 'P900', quantity: 1 }] }))
+    const imageUrl = '/api/product-images/12345678-1234-1234-1234-123456789abc.jpg'
+    const custom: Product = { ...laptop, id: 'P900', name: 'Custom Cup', imageUrl }
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [custom], total: 1 })
+    const { container } = renderWithProviders(<CartPage />)
+    expect(await screen.findByRole('spinbutton', { name: 'Quantity for Custom Cup' })).toHaveValue(1)
+    expect(container.querySelector('article img')).toHaveAttribute('src', imageUrl)
+    expect(window.localStorage.getItem(CART_STORAGE_KEY)).toContain('P900')
+    expect(screen.getAllByText('¥120,000')).toHaveLength(2)
+  })
 })

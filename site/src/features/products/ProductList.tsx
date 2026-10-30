@@ -52,6 +52,7 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
               <ProductImage
                 productId={product.id}
                 productName={product.name}
+                imageUrl={product.imageUrl}
                 variant="catalog"
                 className={styles.productImage}
                 alt=""

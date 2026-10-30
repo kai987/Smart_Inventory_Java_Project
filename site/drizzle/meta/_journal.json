@@ -15,6 +15,13 @@
       "when": 1793343185163,
       "tag": "0001_busy_echo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793345381011,
+      "tag": "0002_chunky_paladin",
+      "breakpoints": true
     }
   ]
 }

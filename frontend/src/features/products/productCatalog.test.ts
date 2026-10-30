@@ -62,6 +62,17 @@ describe('productCatalog', () => {
     expect(getProductCategory({ id: 'toString', name: 'Laptop' })).toBe('other')
   })
 
+  it('honors saved categories for custom and standard products before metadata fallbacks', () => {
+    expect(getProductCategory({ id: 'P900', name: 'Handmade Cup', category: 'kitchen' })).toBe('kitchen')
+    expect(getProductCategory({ id: 'P001', name: 'Laptop', category: 'other' })).toBe('other')
+    expect(getProductCategory({ id: 'P001', name: 'Laptop', category: 'home' })).toBe('home')
+    const custom = { ...product('P900', 'Handmade Cup'), category: 'kitchen' } as const
+    const reassignedLaptop = { ...product('P001', 'Laptop'), category: 'other' } as const
+    expect(selectCatalogProducts([custom, reassignedLaptop], 'kitchen', 'default')).toEqual([custom])
+    expect(selectCatalogProducts([custom, reassignedLaptop], 'electronics', 'default')).toEqual([])
+    expect(selectCatalogProducts([custom, reassignedLaptop], 'other', 'default')).toEqual([reassignedLaptop])
+  })
+
   it.each(localizedProducts)('localizes %s in all three languages without modifying source data', (id, name, zhName, jaName) => {
     const original = Object.freeze({ id, name })
     expect(getLocalizedProductName(id, name, 'en')).toBe(name)

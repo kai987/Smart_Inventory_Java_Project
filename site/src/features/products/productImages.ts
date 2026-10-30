@@ -1,4 +1,4 @@
-import { getProductCategory } from './productCatalog'
+import { hasCatalogProductIdentity } from './productCatalog'
 
 export const PRODUCT_IMAGE_PATHS = {
   P001: '/product-images/laptop.webp',
@@ -29,8 +29,13 @@ export const PRODUCT_IMAGE_PATHS = {
 
 export type ProductImageId = keyof typeof PRODUCT_IMAGE_PATHS
 
-export function getProductImagePath(productId: string, productName?: string): string | null {
-  if (productName !== undefined && getProductCategory({ id: productId, name: productName }) === 'other') return null
+export function isUploadedProductImageUrl(value: string | undefined | null): value is string {
+  return typeof value === 'string' && /^\/api\/product-images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|webp)$/.test(value)
+}
+
+export function getProductImagePath(productId: string, productName?: string, imageUrl?: string): string | null {
+  if (isUploadedProductImageUrl(imageUrl)) return imageUrl
+  if (productName !== undefined && !hasCatalogProductIdentity(productId, productName)) return null
   const canonicalId = productId.trim().toUpperCase()
   if (!Object.hasOwn(PRODUCT_IMAGE_PATHS, canonicalId)) return null
   return PRODUCT_IMAGE_PATHS[canonicalId as ProductImageId]

@@ -11,6 +11,7 @@ export type ProductImageVariant = 'catalog' | 'cart' | 'admin' | 'order'
 type ProductImageProps = ProductNameTranslations & {
   productId: string
   productName: string
+  imageUrl?: string | undefined
   variant: ProductImageVariant
   className?: string
   alt?: string
@@ -27,6 +28,7 @@ const imageDimensions: Record<ProductImageVariant, { width: number; height: numb
 export function ProductImage({
   productId,
   productName,
+  imageUrl,
   nameJa,
   nameZh,
   variant,
@@ -36,7 +38,7 @@ export function ProductImage({
 }: ProductImageProps) {
   const { t } = useTranslation()
   const localizedName = useProductNames()
-  const source = getProductImagePath(productId, productName)
+  const source = getProductImagePath(productId, productName, imageUrl)
   const [loadedSource, setLoadedSource] = useState<string | null>(null)
   const [failedSource, setFailedSource] = useState<string | null>(null)
   const accessibleText = alt ?? t('accessibility.productImage', { productName: localizedName(productId, productName, { nameJa, nameZh }) })

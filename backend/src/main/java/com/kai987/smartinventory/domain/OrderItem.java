@@ -5,6 +5,7 @@ public final class OrderItem {
     private final String productName;
     private final String productNameJa;
     private final String productNameZh;
+    private final String productImageUrl;
     private final long unitPriceYen;
     private final double unitWeightKg;
     private final int quantity;
@@ -13,7 +14,7 @@ public final class OrderItem {
 
     public OrderItem(Product product, int quantity) {
         this(requireProduct(product).getId(), product.getName(), product.getPriceYen(),
-                product.getWeightKg(), quantity, product.getNameJa(), product.getNameZh());
+                product.getWeightKg(), quantity, product.getNameJa(), product.getNameZh(), product.getImageUrl());
     }
 
     public OrderItem(String productId, String productName, long unitPriceYen,
@@ -23,6 +24,11 @@ public final class OrderItem {
 
     public OrderItem(String productId, String productName, long unitPriceYen,
             double unitWeightKg, int quantity, String productNameJa, String productNameZh) {
+        this(productId, productName, unitPriceYen, unitWeightKg, quantity, productNameJa, productNameZh, null);
+    }
+
+    public OrderItem(String productId, String productName, long unitPriceYen,
+            double unitWeightKg, int quantity, String productNameJa, String productNameZh, String productImageUrl) {
         if (!Product.isValidId(productId) || !Product.isValidName(productName)) {
             throw new IllegalArgumentException("Invalid product snapshot.");
         }
@@ -42,6 +48,8 @@ public final class OrderItem {
         this.productName = productName;
         this.productNameJa = Product.normalizeTranslation(productNameJa);
         this.productNameZh = Product.normalizeTranslation(productNameZh);
+        if (productImageUrl != null && !Product.isValidImageUrl(productImageUrl)) throw new IllegalArgumentException("Invalid product image URL.");
+        this.productImageUrl = productImageUrl;
         this.unitPriceYen = unitPriceYen;
         this.unitWeightKg = unitWeightKg;
         this.quantity = quantity;
@@ -52,6 +60,7 @@ public final class OrderItem {
     public String getProductName() { return productName; }
     public String getProductNameJa() { return productNameJa; }
     public String getProductNameZh() { return productNameZh; }
+    public String getProductImageUrl() { return productImageUrl; }
     public long getUnitPriceYen() { return unitPriceYen; }
     public double getUnitWeightKg() { return unitWeightKg; }
     public int getQuantity() { return quantity; }
@@ -61,6 +70,8 @@ public final class OrderItem {
     public String toCsvPart() {
         String base = productId + ":" + productName + ":" + unitPriceYen + ":"
                 + unitWeightKg + ":" + quantity;
+        if (productImageUrl != null) return base + ":" + (productNameJa == null ? "" : productNameJa)
+                + ":" + (productNameZh == null ? "" : productNameZh) + ":" + productImageUrl;
         return productNameJa == null && productNameZh == null ? base
                 : base + ":" + (productNameJa == null ? "" : productNameJa)
                         + ":" + (productNameZh == null ? "" : productNameZh);

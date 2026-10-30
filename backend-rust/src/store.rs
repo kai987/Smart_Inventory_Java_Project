@@ -249,6 +249,24 @@ impl Store {
         name_ja: Option<String>,
         name_zh: Option<String>,
     ) -> Result<Product, DomainError> {
+        self.add_product_details(
+            id, name, price_yen, stock, weight_kg, name_ja, name_zh, None, None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_product_details(
+        &mut self,
+        id: &str,
+        name: &str,
+        price_yen: &str,
+        stock: i32,
+        weight_kg: f64,
+        name_ja: Option<String>,
+        name_zh: Option<String>,
+        category: Option<String>,
+        image_url: Option<String>,
+    ) -> Result<Product, DomainError> {
         if !price_yen.starts_with(|character: char| ('1'..='9').contains(&character))
             || !price_yen.bytes().all(|byte| byte.is_ascii_digit())
         {
@@ -264,7 +282,9 @@ impl Store {
             stock,
             weight_kg,
         )?
-        .with_names(name_ja, name_zh)?;
+        .with_names(name_ja, name_zh)?
+        .with_metadata(category, image_url)?;
+        self.validate_image_reference(product.image_url.as_deref())?;
         if self.products.iter().any(|existing| existing.id == id) {
             return Err(DomainError::new(Code::ProductExists));
         }
@@ -298,7 +318,8 @@ impl Store {
             current.stock,
             current.weight_kg,
         )?
-        .with_names(name_ja, name_zh)?;
+        .with_names(name_ja, name_zh)?
+        .with_metadata(current.category.clone(), current.image_url.clone())?;
         let mut replacement = self.products.clone();
         replacement[index] = updated.clone();
         self.persist(vec![(
@@ -307,6 +328,59 @@ impl Store {
         )])?;
         self.products = replacement;
         Ok(updated)
+    }
+
+    pub fn update_details(
+        &mut self,
+        id: &str,
+        name: &str,
+        name_ja: Option<String>,
+        name_zh: Option<String>,
+        category: String,
+        image_url: Option<Option<String>>,
+    ) -> Result<Product, DomainError> {
+        let index = self
+            .products
+            .iter()
+            .position(|product| product.id == id)
+            .ok_or_else(|| DomainError::new(Code::ProductNotFound))?;
+        let current = &self.products[index];
+        let image = image_url.unwrap_or_else(|| current.image_url.clone());
+        let updated = Product::new(
+            current.id.clone(),
+            name.trim().to_owned(),
+            current.price_yen,
+            current.stock,
+            current.weight_kg,
+        )?
+        .with_names(name_ja, name_zh)?
+        .with_metadata(Some(category), image)?;
+        self.validate_image_reference(updated.image_url.as_deref())?;
+        let mut replacement = self.products.clone();
+        replacement[index] = updated.clone();
+        self.persist(vec![(
+            1,
+            csv_lines(replacement.iter().map(Product::to_csv)),
+        )])?;
+        self.products = replacement;
+        Ok(updated)
+    }
+
+    fn validate_image_reference(&self, image_url: Option<&str>) -> Result<(), DomainError> {
+        if let Some(image_url) = image_url {
+            let filename = image_url.strip_prefix("/api/product-images/").unwrap_or("");
+            crate::images::read_image(&self.directory, filename)
+                .map_err(|_| validation("imageUrl", "Select an uploaded product image."))?;
+        }
+        Ok(())
+    }
+
+    pub fn upload_image(&self, mime: &str, bytes: &[u8]) -> Result<String, DomainError> {
+        crate::images::save_image(&self.directory, mime, bytes)
+    }
+
+    pub fn product_image(&self, filename: &str) -> Result<(Vec<u8>, &'static str), DomainError> {
+        crate::images::read_image(&self.directory, filename)
     }
 
     pub fn update_stock(&mut self, id: &str, stock: i32) -> Result<Product, DomainError> {
@@ -1060,6 +1134,60 @@ mod tests {
         );
         assert_eq!(store.get_product("P001").unwrap().name, "Laptop");
         assert_eq!(fs::read(temp.path().join("products.csv")).unwrap(), before);
+    }
+
+    #[test]
+    fn category_image_snapshot_restart_and_details_rollback_preserve_records() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,10,1.5\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        let url = store
+            .upload_image("image/png", crate::images::TEST_PNG)
+            .unwrap();
+        let product = store
+            .add_product_details(
+                "P901",
+                "Cup",
+                "1200",
+                4,
+                0.3,
+                Some("カップ".into()),
+                None,
+                Some("kitchen".into()),
+                Some(url.clone()),
+            )
+            .unwrap();
+        assert_eq!(Product::from_csv(&product.to_csv()).unwrap(), product);
+        let before = fs::read(temp.path().join("products.csv")).unwrap();
+        store.fail_after_writes = Some(1);
+        assert!(
+            store
+                .update_details("P901", "Changed", None, None, "travel".into(), Some(None))
+                .is_err()
+        );
+        assert_eq!(store.get_product("P901").unwrap(), product);
+        assert_eq!(fs::read(temp.path().join("products.csv")).unwrap(), before);
+        let order = store
+            .create_order("alice", vec![request("P901", 1)])
+            .unwrap();
+        assert_eq!(Order::from_csv(&order.to_csv(), &[]).unwrap(), order);
+        store
+            .update_details("P901", "Cup", None, None, "home".into(), Some(None))
+            .unwrap();
+        store.delete_product("P901").unwrap();
+        drop(store);
+        let reopened = Store::open(temp.path()).unwrap();
+        assert_eq!(
+            reopened.orders[0].items[0].product_image_url.as_deref(),
+            Some(url.as_str())
+        );
+        assert_eq!(
+            reopened
+                .product_image(url.strip_prefix("/api/product-images/").unwrap())
+                .unwrap()
+                .0,
+            crate::images::TEST_PNG
+        );
     }
 
     #[test]

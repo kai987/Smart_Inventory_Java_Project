@@ -4,6 +4,9 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "One or more fields are invalid."),
+    IMAGE_TYPE(HttpStatus.BAD_REQUEST, "Use a valid PNG, JPEG, or WebP image."),
+    IMAGE_SIZE(HttpStatus.PAYLOAD_TOO_LARGE, "Product images must not exceed 2 MiB."),
+    IMAGE_EMPTY(HttpStatus.BAD_REQUEST, "Choose a non-empty product image."),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "Invalid username or password."),
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication is required."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "You do not have permission to perform this action."),

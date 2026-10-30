@@ -81,6 +81,9 @@ pub fn router(store: Store, config: Config) -> Router {
         .route("/api/products/{id}", get(product).delete(delete_product))
         .route("/api/products/{id}/stock", patch(update_stock))
         .route("/api/products/{id}/names", patch(update_names))
+        .route("/api/products/{id}/details", patch(update_details))
+        .route("/api/product-images", post(upload_image))
+        .route("/api/product-images/{filename}", get(product_image))
         .route("/api/orders", get(all_orders).post(create_order))
         .route("/api/orders/me", get(my_orders))
         .route("/api/admin/summary", get(summary))
@@ -497,6 +500,8 @@ struct ProductRequest {
     name: Option<String>,
     name_ja: Option<String>,
     name_zh: Option<String>,
+    category: Option<String>,
+    image_url: Option<String>,
     price_yen: Option<String>,
     stock: Option<i32>,
     weight_kg: Option<f64>,
@@ -516,7 +521,7 @@ async fn create_product(
         Err(response) => return response,
     };
     let result = with_store(&state, move |store| {
-        store.add_product_with_names(
+        store.add_product_details(
             &required_text(body.id, "id")?,
             &required_text(body.name, "name")?,
             &required_text(body.price_yen, "priceYen")?,
@@ -524,10 +529,135 @@ async fn create_product(
             required(body.weight_kg, "weightKg")?,
             body.name_ja,
             body.name_zh,
+            body.category,
+            body.image_url,
         )
     })
     .await;
     result_response(result, uri.path(), StatusCode::CREATED)
+}
+
+fn present_optional_string<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DetailsRequest {
+    name: Option<String>,
+    name_ja: Option<String>,
+    name_zh: Option<String>,
+    category: Option<String>,
+    #[serde(default, deserialize_with = "present_optional_string")]
+    image_url: Option<Option<String>>,
+}
+
+async fn update_details(
+    State(state): State<Arc<AppState>>,
+    Extension(context): Extension<SessionContext>,
+    OriginalUri(uri): OriginalUri,
+    id: Result<Path<String>, PathRejection>,
+    request: Request,
+) -> Response {
+    if let Err(error) = context.require_role(Role::Admin) {
+        return error_response(error, uri.path());
+    }
+    let id = match path_id(id) {
+        Ok(id) => id,
+        Err(error) => return error_response(error, uri.path()),
+    };
+    let body: DetailsRequest = match read_json(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let result = with_store(&state, move |store| {
+        store.update_details(
+            &id,
+            &required_text(body.name, "name")?,
+            body.name_ja,
+            body.name_zh,
+            required_text(body.category, "category")?,
+            body.image_url,
+        )
+    })
+    .await;
+    result_response(result, uri.path(), StatusCode::OK)
+}
+
+async fn upload_image(
+    State(state): State<Arc<AppState>>,
+    Extension(context): Extension<SessionContext>,
+    OriginalUri(uri): OriginalUri,
+    request: Request,
+) -> Response {
+    if let Err(error) = context.require_role(Role::Admin) {
+        return error_response(error, uri.path());
+    }
+    let mime = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if crate::images::extension(&mime).is_none() {
+        return error_response_with_status(
+            DomainError::new(Code::ImageType),
+            uri.path(),
+            Some(StatusCode::UNSUPPORTED_MEDIA_TYPE),
+        );
+    }
+    if request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|length| length > crate::images::MAX_IMAGE_BYTES as u64)
+    {
+        return error_response(DomainError::new(Code::ImageSize), uri.path());
+    }
+    let bytes = match to_bytes(request.into_body(), crate::images::MAX_IMAGE_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(_) => return error_response(DomainError::new(Code::ImageSize), uri.path()),
+    };
+    let result = with_store(&state, move |store| store.upload_image(&mime, &bytes)).await;
+    result_response(
+        result.map(|image_url| serde_json::json!({"imageUrl":image_url})),
+        uri.path(),
+        StatusCode::CREATED,
+    )
+}
+
+async fn product_image(
+    State(state): State<Arc<AppState>>,
+    OriginalUri(uri): OriginalUri,
+    filename: Result<Path<String>, PathRejection>,
+) -> Response {
+    let filename = match path_id(filename) {
+        Ok(value) => value,
+        Err(_) => return error_response(DomainError::new(Code::NotFound), uri.path()),
+    };
+    match with_store(&state, move |store| store.product_image(&filename)).await {
+        Ok((bytes, mime)) => (
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                (
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'none'; sandbox",
+                ),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(error) => error_response(error, uri.path()),
+    }
 }
 
 #[derive(Deserialize)]

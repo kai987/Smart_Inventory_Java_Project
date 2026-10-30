@@ -19,6 +19,7 @@ struct Reply {
     headers: HeaderMap,
     body: Value,
     text: String,
+    bytes: Vec<u8>,
 }
 
 async fn call(app: &Router, request: Request<Body>) -> Reply {
@@ -32,7 +33,189 @@ async fn call(app: &Router, request: Request<Body>) -> Reply {
         headers: parts.headers,
         body,
         text,
+        bytes: bytes.to_vec(),
     }
+}
+
+fn png_fixture() -> Vec<u8> {
+    vec![
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4,
+        0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31, 0, 3, 3,
+        2, 0, 239, 151, 175, 219, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ]
+}
+
+fn image_request(client: &Client, mime: &str, bytes: Vec<u8>) -> Request<Body> {
+    let mut request = client.request(Method::POST, "/api/product-images", None);
+    request
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, mime.parse().unwrap());
+    *request.body_mut() = Body::from(bytes);
+    request
+}
+
+#[tokio::test]
+async fn category_and_immutable_uploads_validate_and_preserve_order_images() {
+    let (directory, app) = app();
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    let bytes = png_fixture();
+    let uploaded = call(&app, image_request(&admin, "image/png", bytes.clone())).await;
+    assert_eq!(uploaded.status, StatusCode::CREATED, "{}", uploaded.text);
+    let image_url = uploaded.body["imageUrl"].as_str().unwrap().to_owned();
+    assert!(smart_inventory_rust::domain::valid_image_url(&image_url));
+    let mut public = Client::new(&app);
+    let served = public.send(Method::GET, &image_url, None).await;
+    assert_eq!(served.status, StatusCode::OK, "{}", served.text);
+    assert_eq!(served.bytes, bytes);
+    assert_eq!(served.headers[header::CONTENT_TYPE], "image/png");
+    assert_eq!(
+        served.headers[header::CACHE_CONTROL],
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(served.headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(
+        served.headers[header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; sandbox"
+    );
+    let created=admin.send(Method::POST,"/api/products",Some(json!({"id":"P901","name":"Cup","priceYen":"1234","stock":4,"weightKg":0.3,"category":"kitchen","imageUrl":image_url}))).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    assert_eq!(created.body["category"], "kitchen");
+    let path = "/api/products/P901/details";
+    let details = admin
+        .send(
+            Method::PATCH,
+            path,
+            Some(json!({"name":"Updated Cup","category":"travel"})),
+        )
+        .await;
+    assert_eq!(details.status, StatusCode::OK, "{}", details.text);
+    assert_eq!(details.body["imageUrl"], image_url);
+    assert_eq!(details.body["stock"], 4);
+    assert_eq!(details.body["priceYen"], "1234");
+    let names = admin
+        .send(
+            Method::PATCH,
+            "/api/products/P901/names",
+            Some(json!({"name":"Cup","nameZh":"旅行杯"})),
+        )
+        .await;
+    assert_eq!(names.body["category"], "travel");
+    assert_eq!(names.body["imageUrl"], image_url);
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    let order = customer
+        .send(
+            Method::POST,
+            "/api/orders",
+            Some(json!({"items":[{"productId":"P901","quantity":1}]})),
+        )
+        .await;
+    assert_eq!(order.body["items"][0]["productImageUrl"], image_url);
+    for invalid in [
+        json!({"name":"Bad","category":"invalid"}),
+        json!({"name":"Bad","category":"home","imageUrl":"https://example.com/a.png"}),
+        json!({"name":"Bad","category":"home","imageUrl":17}),
+        json!({"name":"Bad"}),
+    ] {
+        assert_error(
+            &admin.send(Method::PATCH, path, Some(invalid)).await,
+            StatusCode::BAD_REQUEST,
+            "VALIDATION_ERROR",
+            path,
+        );
+    }
+    let clear = admin
+        .send(
+            Method::PATCH,
+            path,
+            Some(json!({"name":"Cup","category":"home","imageUrl":null})),
+        )
+        .await;
+    assert_eq!(clear.status, StatusCode::OK, "{}", clear.text);
+    assert!(clear.body.get("imageUrl").is_none());
+    assert_eq!(clear.body["stock"], 3);
+    admin.send(Method::DELETE, "/api/products/P901", None).await;
+    assert_eq!(
+        public.send(Method::GET, &image_url, None).await.status,
+        StatusCode::OK
+    );
+    assert!(
+        std::fs::read_to_string(directory.path().join("data/orders.csv"))
+            .unwrap()
+            .contains(&image_url)
+    );
+    assert_error(
+        &public
+            .send(Method::GET, "/api/product-images/%2e%2e%2fusers.csv", None)
+            .await,
+        StatusCode::NOT_FOUND,
+        "NOT_FOUND",
+        "/api/product-images/%2e%2e%2fusers.csv",
+    );
+}
+
+#[tokio::test]
+async fn product_uploads_enforce_roles_csrf_size_and_structure_without_writes() {
+    let (directory, app) = app();
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    assert_error(
+        &call(&app, image_request(&customer, "image/png", png_fixture())).await,
+        StatusCode::FORBIDDEN,
+        "FORBIDDEN",
+        "/api/product-images",
+    );
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    let csrf = admin.csrf.take();
+    assert_error(
+        &call(&app, image_request(&admin, "image/png", png_fixture())).await,
+        StatusCode::FORBIDDEN,
+        "CSRF_INVALID",
+        "/api/product-images",
+    );
+    admin.csrf = csrf;
+    for (mime, bytes, status, code) in [
+        (
+            "image/svg+xml",
+            b"<svg/>".to_vec(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "IMAGE_TYPE",
+        ),
+        (
+            "image/jpeg",
+            png_fixture(),
+            StatusCode::BAD_REQUEST,
+            "IMAGE_TYPE",
+        ),
+        (
+            "image/png",
+            png_fixture()[..8].to_vec(),
+            StatusCode::BAD_REQUEST,
+            "IMAGE_TYPE",
+        ),
+        ("image/png", vec![], StatusCode::BAD_REQUEST, "IMAGE_EMPTY"),
+        (
+            "image/png",
+            vec![0; 2097153],
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "IMAGE_SIZE",
+        ),
+    ] {
+        let request = image_request(&admin, mime, bytes);
+        assert!(request.headers().get(header::CONTENT_LENGTH).is_none());
+        assert_error(
+            &call(&app, request).await,
+            status,
+            code,
+            "/api/product-images",
+        );
+    }
+    assert!(!directory.path().join("data/uploads").exists());
+    let missing = "/api/product-images/00000000-0000-0000-0000-000000000000.png";
+    assert_error(&admin.send(Method::POST,"/api/products",Some(json!({"id":"P902","name":"Missing","priceYen":"1","stock":1,"weightKg":1,"imageUrl":missing}))).await,
+        StatusCode::BAD_REQUEST,"VALIDATION_ERROR","/api/products");
 }
 
 struct Client {

@@ -21,5 +21,8 @@ public record CreateProductRequest(
         @Size(max = 100) @Pattern(regexp = "^[^,|:\\r\\n]*$", message = "Name contains a reserved character.")
         @JsonDeserialize(using = StrictNameDeserializer.class) String nameJa,
         @Size(max = 100) @Pattern(regexp = "^[^,|:\\r\\n]*$", message = "Name contains a reserved character.")
-        @JsonDeserialize(using = StrictNameDeserializer.class) String nameZh) {
+        @JsonDeserialize(using = StrictNameDeserializer.class) String nameZh,
+        @Pattern(regexp = "electronics|home|kitchen|travel|sports|stationery|other")
+        @JsonDeserialize(using = StrictNameDeserializer.class) String category,
+        @JsonDeserialize(using = StrictNameDeserializer.class) String imageUrl) {
 }

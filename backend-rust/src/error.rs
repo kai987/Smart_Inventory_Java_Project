@@ -4,6 +4,9 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Code {
     ValidationError,
+    ImageType,
+    ImageSize,
+    ImageEmpty,
     InvalidCredentials,
     Unauthenticated,
     Forbidden,
@@ -23,7 +26,8 @@ pub enum Code {
 impl Code {
     pub fn status(self) -> u16 {
         match self {
-            Self::ValidationError | Self::EmptyOrder => 400,
+            Self::ValidationError | Self::EmptyOrder | Self::ImageType | Self::ImageEmpty => 400,
+            Self::ImageSize => 413,
             Self::InvalidCredentials | Self::Unauthenticated => 401,
             Self::Forbidden | Self::CsrfInvalid => 403,
             Self::ProductNotFound | Self::NotFound => 404,
@@ -39,6 +43,9 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ValidationError => "VALIDATION_ERROR",
+            Self::ImageType => "IMAGE_TYPE",
+            Self::ImageSize => "IMAGE_SIZE",
+            Self::ImageEmpty => "IMAGE_EMPTY",
             Self::InvalidCredentials => "INVALID_CREDENTIALS",
             Self::Unauthenticated => "UNAUTHENTICATED",
             Self::Forbidden => "FORBIDDEN",
@@ -59,6 +66,9 @@ impl Code {
     pub fn default_message(self) -> &'static str {
         match self {
             Self::ValidationError => "One or more fields are invalid.",
+            Self::ImageType => "Use a valid PNG, JPEG, or WebP image.",
+            Self::ImageSize => "Product images must not exceed 2 MiB.",
+            Self::ImageEmpty => "Choose a non-empty product image.",
             Self::InvalidCredentials => "Invalid username or password.",
             Self::Unauthenticated => "Authentication is required.",
             Self::Forbidden => "You do not have permission to perform this action.",

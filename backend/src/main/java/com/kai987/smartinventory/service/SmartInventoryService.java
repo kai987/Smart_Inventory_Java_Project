@@ -20,6 +20,7 @@ import com.kai987.smartinventory.domain.Role;
 import com.kai987.smartinventory.domain.User;
 import com.kai987.smartinventory.persistence.CsvFileManager;
 import com.kai987.smartinventory.persistence.PersistenceException;
+import com.kai987.smartinventory.persistence.ProductImageStore;
 import com.kai987.smartinventory.web.error.DomainException;
 import com.kai987.smartinventory.web.error.ErrorCode;
 
@@ -27,6 +28,7 @@ import com.kai987.smartinventory.web.error.ErrorCode;
 public class SmartInventoryService {
     private final CsvFileManager files;
     private final PasswordEncoder passwordEncoder;
+    private final ProductImageStore images;
     private final InventoryManager inventory = new InventoryManager();
     private final OrderManager orders = new OrderManager(inventory);
     private final Map<String, User> users = new LinkedHashMap<>();
@@ -35,6 +37,7 @@ public class SmartInventoryService {
     public SmartInventoryService(CsvFileManager files, PasswordEncoder passwordEncoder) {
         this.files = files;
         this.passwordEncoder = passwordEncoder;
+        this.images = new ProductImageStore(files.getDataDirectory());
         List<User> loadedUsers = files.loadUsers(passwordEncoder);
         List<Product> loadedProducts = files.loadProducts();
         inventory.setProducts(loadedProducts);
@@ -106,12 +109,18 @@ public class SmartInventoryService {
 
     public Product addProduct(String id, String name, String priceYen, int stock,
             double weightKg, String nameJa, String nameZh) {
+        return addProduct(id, name, priceYen, stock, weightKg, nameJa, nameZh, null, null);
+    }
+
+    public Product addProduct(String id, String name, String priceYen, int stock,
+            double weightKg, String nameJa, String nameZh, String category, String imageUrl) {
         stateLock.writeLock().lock();
         try {
             long parsedPrice = parsePrice(priceYen);
+            images.requireExisting(imageUrl);
             Product product;
             try {
-                product = new Product(id, name.trim(), parsedPrice, stock, weightKg, nameJa, nameZh);
+                product = new Product(id, name.trim(), parsedPrice, stock, weightKg, nameJa, nameZh, category, imageUrl);
             } catch (IllegalArgumentException exception) {
                 throw new DomainException(ErrorCode.VALIDATION_ERROR);
             }
@@ -138,7 +147,7 @@ public class SmartInventoryService {
             Product replacement;
             try {
                 replacement = new Product(id, name.trim(), current.getPriceYen(), current.getStock(),
-                        current.getWeightKg(), nameJa, nameZh);
+                        current.getWeightKg(), nameJa, nameZh, current.getCategory(), current.getImageUrl());
             } catch (IllegalArgumentException exception) {
                 throw new DomainException(ErrorCode.VALIDATION_ERROR);
             }
@@ -154,6 +163,33 @@ public class SmartInventoryService {
             stateLock.writeLock().unlock();
         }
     }
+
+    public Product updateDetails(String id, String name, String nameJa, String nameZh, String category,
+            boolean imageUrlPresent, String imageUrl) {
+        stateLock.writeLock().lock();
+        try {
+            Product current = inventory.findProductById(id);
+            if (current == null) throw new DomainException(ErrorCode.PRODUCT_NOT_FOUND);
+            Product replacement;
+            String nextImage = imageUrlPresent ? imageUrl : current.getImageUrl();
+            images.requireExisting(nextImage);
+            try {
+                if (!Product.isValidCategory(category)) throw new IllegalArgumentException("Invalid product category.");
+                replacement = new Product(id, name.trim(), current.getPriceYen(), current.getStock(),
+                        current.getWeightKg(), nameJa, nameZh, category, nextImage);
+            } catch (IllegalArgumentException exception) { throw new DomainException(ErrorCode.VALIDATION_ERROR); }
+            inventory.replaceProduct(replacement);
+            try { files.saveProducts(inventory.getProducts()); }
+            catch (PersistenceException exception) { inventory.replaceProduct(current); throw exception; }
+            return inventory.findProductById(id);
+        } finally { stateLock.writeLock().unlock(); }
+    }
+
+    public String uploadProductImage(java.io.InputStream input, String mime, long length) {
+        return images.save(input, mime, length);
+    }
+
+    public ProductImageStore.Image productImage(String filename) { return images.read(filename); }
 
     public Product updateStock(String id, int stock) {
         stateLock.writeLock().lock();

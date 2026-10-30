@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.file.Files;
@@ -487,6 +488,62 @@ class ApiSecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return (MockHttpSession) result.getRequest().getSession(false);
+    }
+
+    @Test
+    @Order(31)
+    void categoryAndImageUploadFlowPreservesSnapshotsAndRejectsInvalidMedia() throws Exception {
+        byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xr9sAAAAASUVORK5CYII=");
+        MockHttpSession admin=login("admin","admin123");
+        SessionCsrf adminCsrf=csrf(admin);
+        mockMvc.perform(post("/api/product-images").session(admin).contentType("image/png").content(png))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CSRF_INVALID"));
+        MockHttpSession customer=login("customer","user123");
+        SessionCsrf customerCsrf=csrf(customer);
+        mockMvc.perform(post("/api/product-images").session(customer).header(customerCsrf.header(),customerCsrf.token()).contentType("image/png").content(png))
+                .andExpect(status().isForbidden());
+        for (var invalid: List.of(new Object[]{"image/svg+xml","<svg/>".getBytes(),415,"IMAGE_TYPE"},
+                new Object[]{"image/jpeg",png,400,"IMAGE_TYPE"},new Object[]{"image/png",java.util.Arrays.copyOf(png,8),400,"IMAGE_TYPE"},
+                new Object[]{"image/png",new byte[0],400,"IMAGE_EMPTY"},new Object[]{"image/png",new byte[2097153],413,"IMAGE_SIZE"})) {
+            mockMvc.perform(post("/api/product-images").session(admin).header(adminCsrf.header(),adminCsrf.token())
+                            .contentType((String)invalid[0]).content((byte[])invalid[1]))
+                    .andExpect(status().is((Integer)invalid[2])).andExpect(jsonPath("$.code").value(invalid[3]));
+        }
+        assertFalse(Files.exists(dataDirectory.resolve("uploads")));
+        MvcResult upload=mockMvc.perform(post("/api/product-images").session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType("image/png").content(png))
+                .andExpect(status().isCreated()).andReturn();
+        String url=objectMapper.readTree(upload.getResponse().getContentAsString()).get("imageUrl").asText();
+        mockMvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().bytes(png))
+                .andExpect(content().contentType("image/png")).andExpect(header().string("Cache-Control","public, max-age=31536000, immutable"))
+                .andExpect(header().string("X-Content-Type-Options","nosniff")).andExpect(header().string("Content-Security-Policy","default-src 'none'; sandbox"));
+        mockMvc.perform(post("/api/products").session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"P901\",\"name\":\"Cup\",\"priceYen\":\"1234\",\"stock\":4,\"weightKg\":0.3,\"category\":\"kitchen\",\"imageUrl\":\""+url+"\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.category").value("kitchen"));
+        String path="/api/products/P901/details";
+        mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Travel Cup\",\"category\":\"travel\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").value(url)).andExpect(jsonPath("$.stock").value(4)).andExpect(jsonPath("$.priceYen").value("1234"));
+        mockMvc.perform(patch("/api/products/P901/names").session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Travel Cup\",\"nameZh\":\"旅行杯\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").value(url)).andExpect(jsonPath("$.category").value("travel"));
+        MvcResult placed=mockMvc.perform(post("/api/orders").session(customer).header(customerCsrf.header(),customerCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P901\",\"quantity\":1}]}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.items[0].productImageUrl").value(url)).andReturn();
+        String orderId=objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asText();
+        for (String invalid: List.of("{\"name\":\"Bad\",\"category\":\"invalid\"}","{\"name\":\"Bad\",\"category\":17}",
+                "{\"name\":\"Bad\",\"category\":\"home\",\"imageUrl\":17}","{\"name\":\"Bad\",\"category\":\"home\",\"imageUrl\":\"https://example.com/image.png\"}","{\"name\":\"Bad\"}")) {
+            mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON).content(invalid))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Travel Cup\",\"category\":\"home\",\"imageUrl\":null}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").doesNotExist()).andExpect(jsonPath("$.stock").value(3));
+        mockMvc.perform(delete("/api/products/P901").session(admin).header(adminCsrf.header(),adminCsrf.token())).andExpect(status().isNoContent());
+        mockMvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().bytes(png));
+        MvcResult saved=mockMvc.perform(get("/api/orders/me").session(customer)).andExpect(status().isOk()).andReturn();
+        for (JsonNode candidate: objectMapper.readTree(saved.getResponse().getContentAsString()).get("items")) {
+            if (candidate.get("orderId").asText().equals(orderId)) assertEquals(url,candidate.get("items").get(0).get("productImageUrl").asText());
+        }
     }
 
     private SessionCsrf csrf(MockHttpSession session) throws Exception {

@@ -142,11 +142,11 @@ public final class OrderManager {
                 return product == null ? null
                         : new OrderItem(product, Integer.parseInt(fields[1].trim()));
             }
-            if (fields.length == 5 || fields.length == 7) {
+            if (fields.length == 5 || fields.length == 7 || fields.length == 8) {
                 return new OrderItem(fields[0].trim(), fields[1].trim(),
                         Long.parseLong(fields[2].trim()), Double.parseDouble(fields[3].trim()),
-                        Integer.parseInt(fields[4].trim()), fields.length == 7 ? fields[5] : null,
-                        fields.length == 7 ? fields[6] : null);
+                        Integer.parseInt(fields[4].trim()), fields.length >= 7 ? fields[5] : null,
+                        fields.length >= 7 ? fields[6] : null, fields.length == 8 ? fields[7] : null);
             }
         } catch (IllegalArgumentException exception) {
             return null;
