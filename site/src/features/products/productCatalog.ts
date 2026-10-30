@@ -4,6 +4,7 @@ import type { AppLanguage } from '../../i18n/language'
 export type ProductCategory = 'electronics' | 'home' | 'kitchen' | 'travel' | 'sports' | 'stationery' | 'other'
 export type ProductCategoryFilter = 'all' | ProductCategory
 export type ProductSort = 'default' | 'priceAsc' | 'priceDesc'
+export type ProductNameTranslations = { nameJa?: string | undefined; nameZh?: string | undefined }
 
 export const productCategoryLabelKeys = {
   all: 'products.categoryAll',
@@ -59,7 +60,9 @@ export function getProductCategory(product: Pick<Product, 'id' | 'name'>): Produ
   return getMatchingMetadata(product)?.category ?? 'other'
 }
 
-export function getLocalizedProductName(productId: string, originalName: string, language: AppLanguage): string {
+export function getLocalizedProductName(productId: string, originalName: string, language: AppLanguage, translations?: ProductNameTranslations): string {
+  const savedTranslation = language === 'ja' ? translations?.nameJa : language === 'zh-CN' ? translations?.nameZh : undefined
+  if (savedTranslation?.trim()) return savedTranslation.trim()
   const metadata = getMatchingMetadata({ id: productId, name: originalName })
   if (metadata === undefined) return originalName
   if (language === 'ja') return metadata.jaName
@@ -71,10 +74,11 @@ function normalizeSearchText(text: string): string {
   return text.normalize('NFKC').trim().toLowerCase()
 }
 
-export function matchesProductSearch(product: Pick<Product, 'id' | 'name'>, query: string): boolean {
+export function matchesProductSearch(product: Pick<Product, 'id' | 'name' | 'nameJa' | 'nameZh'>, query: string): boolean {
   const normalizedQuery = normalizeSearchText(query)
   if (normalizedQuery === '') return true
-  if ([product.id, product.name].some((value) => normalizeSearchText(value).includes(normalizedQuery))) return true
+  if ([product.id, product.name, product.nameJa, product.nameZh].some((value) =>
+    value !== undefined && normalizeSearchText(value).includes(normalizedQuery))) return true
 
   const metadata = getMatchingMetadata(product)
   return metadata !== undefined && [metadata.canonicalName, metadata.jaName, metadata.zhName]

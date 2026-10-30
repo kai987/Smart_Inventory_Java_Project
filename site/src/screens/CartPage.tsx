@@ -71,7 +71,7 @@ export function CartPage() {
       const product = productMap.get(item.productId)
       if (product !== undefined && product.stock > 0 && item.quantity > product.stock) {
         dispatch({ type: 'setQuantity', productId: item.productId, quantity: product.stock })
-        showToast(<ProductToastMessage kind="stockAdjusted" productId={product.id} originalName={product.name} stock={product.stock} />, 'info')
+        showToast(<ProductToastMessage kind="stockAdjusted" productId={product.id} originalName={product.name} nameJa={product.nameJa} nameZh={product.nameZh} stock={product.stock} />, 'info')
       }
     }
   }, [dispatch, productMap, products.data, showToast, state.items, user])
@@ -188,7 +188,7 @@ export function CartPage() {
           <section className={orderStyles.cartList} aria-label={t('cart.itemsLabel')}>
             {resolvedItems.map(({ cartItem, product }, itemIndex) => {
               const unavailable = product === undefined || product.stock === 0
-              const displayName = product === undefined ? cartItem.productId : productName(product.id, product.name)
+              const displayName = product === undefined ? cartItem.productId : productName(product.id, product.name, product)
               const hasQuantityError = invalidQuantityIds.has(cartItem.productId)
               const quantityErrorId = `cart-quantity-error-${itemIndex}`
               return (

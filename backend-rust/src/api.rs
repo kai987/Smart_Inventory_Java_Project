@@ -80,6 +80,7 @@ pub fn router(store: Store, config: Config) -> Router {
         .route("/api/products", get(products).post(create_product))
         .route("/api/products/{id}", get(product).delete(delete_product))
         .route("/api/products/{id}/stock", patch(update_stock))
+        .route("/api/products/{id}/names", patch(update_names))
         .route("/api/orders", get(all_orders).post(create_order))
         .route("/api/orders/me", get(my_orders))
         .route("/api/admin/summary", get(summary))
@@ -494,6 +495,8 @@ async fn product(
 struct ProductRequest {
     id: Option<String>,
     name: Option<String>,
+    name_ja: Option<String>,
+    name_zh: Option<String>,
     price_yen: Option<String>,
     stock: Option<i32>,
     weight_kg: Option<f64>,
@@ -513,16 +516,56 @@ async fn create_product(
         Err(response) => return response,
     };
     let result = with_store(&state, move |store| {
-        store.add_product(
+        store.add_product_with_names(
             &required_text(body.id, "id")?,
             &required_text(body.name, "name")?,
             &required_text(body.price_yen, "priceYen")?,
             required(body.stock, "stock")?,
             required(body.weight_kg, "weightKg")?,
+            body.name_ja,
+            body.name_zh,
         )
     })
     .await;
     result_response(result, uri.path(), StatusCode::CREATED)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NamesRequest {
+    name: Option<String>,
+    name_ja: Option<String>,
+    name_zh: Option<String>,
+}
+
+async fn update_names(
+    State(state): State<Arc<AppState>>,
+    Extension(context): Extension<SessionContext>,
+    OriginalUri(uri): OriginalUri,
+    id: Result<Path<String>, PathRejection>,
+    request: Request,
+) -> Response {
+    if let Err(error) = context.require_role(Role::Admin) {
+        return error_response(error, uri.path());
+    }
+    let id = match path_id(id) {
+        Ok(id) => id,
+        Err(error) => return error_response(error, uri.path()),
+    };
+    let body: NamesRequest = match read_json(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let result = with_store(&state, move |store| {
+        store.update_names(
+            &id,
+            &required_text(body.name, "name")?,
+            body.name_ja,
+            body.name_zh,
+        )
+    })
+    .await;
+    result_response(result, uri.path(), StatusCode::OK)
 }
 
 #[derive(Deserialize)]

@@ -70,4 +70,27 @@ describe('OrderCard localized snapshot names', () => {
     expect(container.querySelector('img')).toHaveAttribute('src', '/product-images/laptop.webp')
     expect(order).toEqual(original)
   })
+
+  it('uses immutable custom translation snapshots without loading the current product', async () => {
+    const order = historicalOrder()
+    order.items = [
+      { ...order.items[0], productId: 'P910', productName: 'Ceramic Cup (2026)', productNameJa: '陶器カップ（2026年）', productNameZh: '陶瓷杯（2026年）' },
+      { ...order.items[1], productId: 'P911', productName: 'No Japanese Translation', productNameZh: '仅中文译名' },
+    ]
+    const original = structuredClone(order)
+    const { container } = renderWithProviders(<><LanguageSelect /><OrderCard order={order} /></>)
+    const user = userEvent.setup()
+    await user.click(screen.getByText('View item snapshots'))
+    expectSnapshotName('P910', 'Ceramic Cup (2026)')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Language' }), 'ja')
+    expectSnapshotName('P910', '陶器カップ（2026年）')
+    expectSnapshotName('P911', 'No Japanese Translation')
+    await user.selectOptions(screen.getByRole('combobox', { name: '言語' }), 'zh-CN')
+    expectSnapshotName('P910', '陶瓷杯（2026年）')
+    expectSnapshotName('P911', '仅中文译名')
+    await user.selectOptions(screen.getByRole('combobox', { name: '语言' }), 'en')
+    expectSnapshotName('P910', 'Ceramic Cup (2026)')
+    expect(container.querySelector('img')).toBeNull()
+    expect(order).toEqual(original)
+  })
 })

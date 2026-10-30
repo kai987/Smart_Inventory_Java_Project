@@ -1,10 +1,14 @@
 package com.kai987.smartinventory.web.dto.product;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 public record ProductResponse(
         String id,
         String name,
         String priceYen,
         int stock,
         double weightKg,
-        boolean available) {
+        boolean available,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String nameJa,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String nameZh) {
 }

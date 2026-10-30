@@ -18,7 +18,7 @@ public class ApiMapper {
     public ProductResponse toProduct(Product product) {
         return new ProductResponse(product.getId(), product.getName(),
                 Long.toString(product.getPriceYen()), product.getStock(), product.getWeightKg(),
-                product.getStock() > 0);
+                product.getStock() > 0, product.getNameJa(), product.getNameZh());
     }
 
     public UserResponse toUser(User user) {
@@ -35,6 +35,7 @@ public class ApiMapper {
     private OrderItemResponse toOrderItem(OrderItem item) {
         return new OrderItemResponse(item.getProductId(), item.getProductName(),
                 Long.toString(item.getUnitPriceYen()), item.getUnitWeightKg(), item.getQuantity(),
-                Long.toString(item.getSubtotalYen()), item.getTotalWeightKg());
+                Long.toString(item.getSubtotalYen()), item.getTotalWeightKg(),
+                item.getProductNameJa(), item.getProductNameZh());
     }
 }

@@ -33,6 +33,8 @@ impl User {
 pub struct Product {
     pub id: String,
     pub name: String,
+    pub name_ja: Option<String>,
+    pub name_zh: Option<String>,
     pub price_yen: i64,
     pub stock: i32,
     pub weight_kg: f64,
@@ -70,6 +72,8 @@ impl Product {
         Ok(Self {
             id,
             name,
+            name_ja: None,
+            name_zh: None,
             price_yen,
             stock,
             weight_kg,
@@ -78,7 +82,7 @@ impl Product {
 
     pub(crate) fn from_csv(line: &str) -> Option<Self> {
         let fields: Vec<&str> = line.split(',').collect();
-        if fields.len() != 5 {
+        if fields.len() != 5 && fields.len() != 7 {
             return None;
         }
         Self::new(
@@ -88,22 +92,55 @@ impl Product {
             fields[3].trim().parse().ok()?,
             fields[4].trim().parse().ok()?,
         )
+        .ok()?
+        .with_names(
+            fields.get(5).map(|name| (*name).to_owned()),
+            fields.get(6).map(|name| (*name).to_owned()),
+        )
         .ok()
     }
 
     pub(crate) fn to_csv(&self) -> String {
-        format!(
+        let base = format!(
             "{},{},{},{},{}",
             self.id, self.name, self.price_yen, self.stock, self.weight_kg
-        )
+        );
+        if self.name_ja.is_none() && self.name_zh.is_none() {
+            base
+        } else {
+            format!(
+                "{base},{},{}",
+                self.name_ja.as_deref().unwrap_or(""),
+                self.name_zh.as_deref().unwrap_or("")
+            )
+        }
+    }
+
+    pub fn with_names(
+        mut self,
+        name_ja: Option<String>,
+        name_zh: Option<String>,
+    ) -> Result<Self, DomainError> {
+        self.name_ja = normalize_product_translation(name_ja, "nameJa")?;
+        self.name_zh = normalize_product_translation(name_zh, "nameZh")?;
+        Ok(self)
     }
 }
 
 impl Serialize for Product {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("Product", 6)?;
+        let mut state = serializer.serialize_struct(
+            "Product",
+            6 + usize::from(self.name_ja.is_some()) + usize::from(self.name_zh.is_some()),
+        )?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("name", &self.name)?;
+        if let Some(name) = &self.name_ja {
+            state.serialize_field("nameJa", name)?;
+        }
+        if let Some(name) = &self.name_zh {
+            state.serialize_field("nameZh", name)?;
+        }
         state.serialize_field("priceYen", &self.price_yen.to_string())?;
         state.serialize_field("stock", &self.stock)?;
         state.serialize_field("weightKg", &self.weight_kg)?;
@@ -124,6 +161,10 @@ pub struct RequestedItem {
 pub struct OrderItem {
     pub product_id: String,
     pub product_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_name_ja: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_name_zh: Option<String>,
     #[serde(serialize_with = "serialize_yen")]
     pub unit_price_yen: i64,
     pub unit_weight_kg: f64,
@@ -157,6 +198,8 @@ impl OrderItem {
         Ok(Self {
             product_id: product.id.clone(),
             product_name: product.name.clone(),
+            product_name_ja: product.name_ja.clone(),
+            product_name_zh: product.name_zh.clone(),
             unit_price_yen: product.price_yen,
             unit_weight_kg: product.weight_kg,
             quantity,
@@ -166,14 +209,23 @@ impl OrderItem {
     }
 
     fn to_csv_part(&self) -> String {
-        format!(
+        let base = format!(
             "{}:{}:{}:{}:{}",
             self.product_id,
             self.product_name,
             self.unit_price_yen,
             self.unit_weight_kg,
             self.quantity
-        )
+        );
+        if self.product_name_ja.is_none() && self.product_name_zh.is_none() {
+            base
+        } else {
+            format!(
+                "{base}:{}:{}",
+                self.product_name_ja.as_deref().unwrap_or(""),
+                self.product_name_zh.as_deref().unwrap_or("")
+            )
+        }
     }
 }
 
@@ -264,6 +316,20 @@ impl Order {
                     quantity.trim().parse().ok()?,
                 )
                 .ok()?,
+                [id, name, price, weight, quantity, name_ja, name_zh] => OrderItem::new(
+                    &Product::new(
+                        id.trim().to_owned(),
+                        name.trim().to_owned(),
+                        price.trim().parse().ok()?,
+                        0,
+                        weight.trim().parse().ok()?,
+                    )
+                    .ok()?
+                    .with_names(Some((*name_ja).to_owned()), Some((*name_zh).to_owned()))
+                    .ok()?,
+                    quantity.trim().parse().ok()?,
+                )
+                .ok()?,
                 _ => return None,
             };
             items.push(item);
@@ -326,6 +392,29 @@ pub fn valid_product_name(value: &str) -> bool {
     !value.trim().is_empty()
         && value.encode_utf16().count() <= 100
         && !contains_reserved_character(value)
+}
+
+pub fn normalize_product_translation(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, DomainError> {
+    match value {
+        None => Ok(None),
+        Some(value)
+            if value.encode_utf16().count() > 100 || contains_reserved_character(&value) =>
+        {
+            Err(validation(
+                field,
+                "Product name is invalid or contains a reserved character.",
+            ))
+        }
+        Some(value) if value.trim().is_empty() => Ok(None),
+        Some(value) if valid_product_name(&value) => Ok(Some(value.trim().to_owned())),
+        Some(_) => Err(validation(
+            field,
+            "Product name is invalid or contains a reserved character.",
+        )),
+    }
 }
 
 pub fn contains_reserved_character(value: &str) -> bool {
@@ -456,6 +545,55 @@ mod tests {
         assert_eq!(
             serde_json::to_value(user).unwrap(),
             json!({"username":"alice", "role":"CUSTOMER"})
+        );
+    }
+
+    #[test]
+    fn translated_product_and_order_snapshots_round_trip_without_changing_legacy_rows() {
+        let original = Product::new("P900".into(), "Travel Cup".into(), 1200, 4, 0.3).unwrap();
+        assert_eq!(original.to_csv(), "P900,Travel Cup,1200,4,0.3");
+        assert!(
+            serde_json::to_value(&original)
+                .unwrap()
+                .get("nameJa")
+                .is_none()
+        );
+        let translated = original
+            .with_names(Some("  トラベルカップ  ".into()), Some("旅行杯".into()))
+            .unwrap();
+        assert_eq!(
+            Product::from_csv(&translated.to_csv()),
+            Some(translated.clone())
+        );
+        let order = Order::new(
+            "O900".into(),
+            "alice".into(),
+            vec![OrderItem::new(&translated, 2).unwrap()],
+        )
+        .unwrap();
+        let restored = Order::from_csv(&order.to_csv(), &[]).unwrap();
+        assert_eq!(restored, order);
+        assert_eq!(
+            serde_json::to_value(restored).unwrap()["items"][0]["productNameZh"],
+            "旅行杯"
+        );
+        assert!(Product::from_csv("P900,Travel Cup,1200,4,0.3,invalid:name,旅行杯").is_none());
+        assert!(
+            Order::from_csv(
+                "O900,alice,P900:Travel Cup:1200:0.3:2:invalid,name:旅行杯",
+                &[]
+            )
+            .is_none()
+        );
+        let blank = translated.with_names(Some("   ".into()), None).unwrap();
+        assert!(blank.name_ja.is_none());
+        assert!(blank.name_zh.is_none());
+        for invalid in [" ".repeat(101), "\n".to_owned()] {
+            assert!(normalize_product_translation(Some(invalid), "nameJa").is_err());
+        }
+        assert_eq!(
+            normalize_product_translation(Some(" ".into()), "nameJa").unwrap(),
+            None
         );
     }
 

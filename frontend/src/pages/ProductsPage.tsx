@@ -49,7 +49,7 @@ export function ProductsPage() {
 
   const handleAdd = (product: Product) => {
     dispatch({ type: 'add', productId: product.id })
-    showToast(<ProductToastMessage kind="added" productId={product.id} originalName={product.name} />, 'success')
+    showToast(<ProductToastMessage kind="added" productId={product.id} originalName={product.name} nameJa={product.nameJa} nameZh={product.nameZh} />, 'success')
   }
 
   return (

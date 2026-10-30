@@ -20,7 +20,7 @@ The online version uses the React interface with a **TypeScript/Vinext API and D
 
 The online catalog includes 24 demo products across electronics, home, kitchen, travel, sports, and stationery. Browse category cards, combine category/search/stock filters, and sort by price. A one-time, insert-only catalog expansion preserves existing stock and orders; local Java/Rust runtime data and the historical console dataset remain unchanged.
 
-All 24 standard product names follow the selected English, Japanese, or Simplified Chinese interface language across the catalog, cart, saved orders, and admin screens. Search accepts names in all three languages as well as product IDs. Localization is display-only: stored names, historical snapshots, prices, and stock remain unchanged, and custom or renamed products retain their original names.
+All 24 standard product names follow the selected English, Japanese, or Simplified Chinese interface language across the catalog, cart, saved orders, and admin screens. Administrators can save a required English/default name plus optional Japanese and Chinese names when adding custom products, or use the row's Edit names action later. Missing translations fall back to the default name. Search accepts all saved names and product IDs. Orders preserve the names from checkout, even after a product is renamed or deleted. Switching language or editing names never changes prices or stock.
 
 The public demo accounts allow customers to place orders and administrators to modify products and stock. Other visitors can change the shared demo data. No real payments are processed. Do not enter real personal information, real customer data, or passwords reused on other services. See the Demo accounts section below for the published credentials.
 
@@ -320,6 +320,7 @@ All endpoints use JSON under `/api`. Yen values are decimal strings in API messa
 | `GET` | `/api/products/{id}` | Public | Read one product |
 | `POST` | `/api/products` | Admin + CSRF | Create a product |
 | `PATCH` | `/api/products/{id}/stock` | Admin + CSRF | Replace current stock quantity |
+| `PATCH` | `/api/products/{id}/names` | Admin + CSRF | Update default, Japanese, and Chinese names |
 | `DELETE` | `/api/products/{id}` | Admin + CSRF | Delete a product without damaging order history |
 | `POST` | `/api/orders` | Customer + CSRF | Create an order from current inventory |
 | `GET` | `/api/orders/me` | Customer | Read the current customer's orders |
@@ -382,7 +383,7 @@ smart-inventory-language:v1
 smart-inventory-theme:v1
 ```
 
-Changing language updates the current page immediately without reloading, changing the URL, signing the user out, clearing the cart, or resetting the theme. JPY amounts, numbers, stock quantities, and weights use the active locale. Interface text, validation messages, accessible labels, notifications, and known API errors are translated; business data is not. Product names, usernames, product IDs, order IDs, roles, and historical order snapshots therefore remain exactly as stored by the backend or D1 database.
+Changing language updates the current page immediately without reloading, changing the URL, signing the user out, clearing the cart, or resetting the theme. JPY amounts, numbers, stock quantities, and weights use the active locale. Interface text, validation messages, accessible labels, notifications, and known API errors are translated. Product names use saved language variants (with built-in translations for standard products); custom products without a translation show their default name. Orders use name snapshots captured at checkout. Usernames, product IDs, order IDs, roles, prices, and stock are not rewritten.
 
 ## Screenshots
 

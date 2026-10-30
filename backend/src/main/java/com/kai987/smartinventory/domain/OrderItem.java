@@ -3,6 +3,8 @@ package com.kai987.smartinventory.domain;
 public final class OrderItem {
     private final String productId;
     private final String productName;
+    private final String productNameJa;
+    private final String productNameZh;
     private final long unitPriceYen;
     private final double unitWeightKg;
     private final int quantity;
@@ -11,11 +13,16 @@ public final class OrderItem {
 
     public OrderItem(Product product, int quantity) {
         this(requireProduct(product).getId(), product.getName(), product.getPriceYen(),
-                product.getWeightKg(), quantity);
+                product.getWeightKg(), quantity, product.getNameJa(), product.getNameZh());
     }
 
     public OrderItem(String productId, String productName, long unitPriceYen,
             double unitWeightKg, int quantity) {
+        this(productId, productName, unitPriceYen, unitWeightKg, quantity, null, null);
+    }
+
+    public OrderItem(String productId, String productName, long unitPriceYen,
+            double unitWeightKg, int quantity, String productNameJa, String productNameZh) {
         if (!Product.isValidId(productId) || !Product.isValidName(productName)) {
             throw new IllegalArgumentException("Invalid product snapshot.");
         }
@@ -33,6 +40,8 @@ public final class OrderItem {
         }
         this.productId = productId;
         this.productName = productName;
+        this.productNameJa = Product.normalizeTranslation(productNameJa);
+        this.productNameZh = Product.normalizeTranslation(productNameZh);
         this.unitPriceYen = unitPriceYen;
         this.unitWeightKg = unitWeightKg;
         this.quantity = quantity;
@@ -41,6 +50,8 @@ public final class OrderItem {
 
     public String getProductId() { return productId; }
     public String getProductName() { return productName; }
+    public String getProductNameJa() { return productNameJa; }
+    public String getProductNameZh() { return productNameZh; }
     public long getUnitPriceYen() { return unitPriceYen; }
     public double getUnitWeightKg() { return unitWeightKg; }
     public int getQuantity() { return quantity; }
@@ -48,8 +59,11 @@ public final class OrderItem {
     public double getTotalWeightKg() { return totalWeightKg; }
 
     public String toCsvPart() {
-        return productId + ":" + productName + ":" + unitPriceYen + ":"
+        String base = productId + ":" + productName + ":" + unitPriceYen + ":"
                 + unitWeightKg + ":" + quantity;
+        return productNameJa == null && productNameZh == null ? base
+                : base + ":" + (productNameJa == null ? "" : productNameJa)
+                        + ":" + (productNameZh == null ? "" : productNameZh);
     }
 
     private static Product requireProduct(Product product) {

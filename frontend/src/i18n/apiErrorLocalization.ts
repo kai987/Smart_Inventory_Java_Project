@@ -26,6 +26,8 @@ const fieldTranslationKeys = {
   id: 'validation.invalidProductId',
   productId: 'validation.invalidProductId',
   name: 'validation.invalidProductName',
+  nameJa: 'validation.invalidProductName',
+  nameZh: 'validation.invalidProductName',
   productName: 'validation.invalidProductName',
   price: 'validation.invalidPrice',
   priceYen: 'validation.invalidPrice',

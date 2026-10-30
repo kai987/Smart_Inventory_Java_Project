@@ -59,7 +59,7 @@ export function ProductList({ products, canAdd, onAdd }: { products: Product[]; 
               />
               <div className={styles.productHeading}>
                 <p className={styles.productCategory}>{t(productCategoryLabelKeys[getProductCategory(product)])}</p>
-                <h2>{productName(product.id, product.name)}</h2>
+                <h2>{productName(product.id, product.name, product)}</h2>
                 <span className={styles.productId}>{product.id}</span>
               </div>
             </div>

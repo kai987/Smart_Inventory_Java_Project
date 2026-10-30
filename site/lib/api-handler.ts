@@ -20,7 +20,9 @@ import {
   calculateOrder,
   LOW_STOCK_THRESHOLD,
   normalizeRequestedItems,
+  normalizedProductNames,
   productErrors,
+  productNameErrors,
   registrationErrors,
   stockErrors,
   type CalculatedOrder,
@@ -42,6 +44,8 @@ type OrderRow = {
 type OrderItemRow = {
   product_id: string;
   product_name: string;
+  product_name_ja: string | null;
+  product_name_zh: string | null;
   unit_price_yen: string;
   unit_weight_kg: number;
   quantity: number;
@@ -53,6 +57,8 @@ function productResponse(product: ProductRow) {
   return {
     id: product.id,
     name: product.name,
+    ...(product.name_ja ? { nameJa: product.name_ja } : {}),
+    ...(product.name_zh ? { nameZh: product.name_zh } : {}),
     priceYen: product.price_yen,
     stock: product.stock,
     weightKg: product.weight_kg,
@@ -71,7 +77,7 @@ function escapedLike(value: string): string {
 async function productById(id: string): Promise<ProductRow | null> {
   const database = await ensureDatabase();
   return database.prepare(
-    'SELECT id, name, price_yen, stock, weight_kg FROM products WHERE id = ?',
+    'SELECT id, name, name_ja, name_zh, price_yen, stock, weight_kg FROM products WHERE id = ?',
   ).bind(id).first<ProductRow>();
 }
 
@@ -79,7 +85,7 @@ async function productsForOrder(items: RequestedItem[]): Promise<ProductRow[]> {
   const database = await ensureDatabase();
   const placeholders = items.map(() => '?').join(', ');
   const result = await database.prepare(
-    `SELECT id, name, price_yen, stock, weight_kg FROM products WHERE id IN (${placeholders})`,
+    `SELECT id, name, name_ja, name_zh, price_yen, stock, weight_kg FROM products WHERE id IN (${placeholders})`,
   ).bind(...items.map((item) => item.productId)).all<ProductRow>();
   return result.results;
 }
@@ -92,7 +98,7 @@ async function ordersResponse(whereSql = '', bindings: unknown[] = []) {
   ).bind(...bindings).all<OrderRow>();
   const items = await Promise.all(orders.results.map(async (order) => {
     const result = await database.prepare(
-      `SELECT product_id, product_name, unit_price_yen, unit_weight_kg,
+      `SELECT product_id, product_name, product_name_ja, product_name_zh, unit_price_yen, unit_weight_kg,
               quantity, subtotal_yen, total_weight_kg
        FROM order_items WHERE order_id = ? ORDER BY item_order ASC`,
     ).bind(order.order_id).all<OrderItemRow>();
@@ -102,6 +108,8 @@ async function ordersResponse(whereSql = '', bindings: unknown[] = []) {
       items: result.results.map((item) => ({
         productId: item.product_id,
         productName: item.product_name,
+        ...(item.product_name_ja ? { productNameJa: item.product_name_ja } : {}),
+        ...(item.product_name_zh ? { productNameZh: item.product_name_zh } : {}),
         unitPriceYen: item.unit_price_yen,
         unitWeightKg: item.unit_weight_kg,
         quantity: item.quantity,
@@ -197,14 +205,14 @@ async function listProducts(request: Request): Promise<Response> {
   const conditions: string[] = [];
   const bindings: unknown[] = [];
   if (query !== '') {
-    conditions.push("(LOWER(id) LIKE ? ESCAPE '\\' OR LOWER(name) LIKE ? ESCAPE '\\')");
+    conditions.push("(LOWER(id) LIKE ? ESCAPE '\\' OR LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(name_ja, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(name_zh, '')) LIKE ? ESCAPE '\\')");
     const pattern = escapedLike(query);
-    bindings.push(pattern, pattern);
+    bindings.push(pattern, pattern, pattern, pattern);
   }
   if (inStockOnly) conditions.push('stock > 0');
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const products = await database.prepare(
-    `SELECT id, name, price_yen, stock, weight_kg FROM products ${where} ORDER BY id ASC`,
+    `SELECT id, name, name_ja, name_zh, price_yen, stock, weight_kg FROM products ${where} ORDER BY id ASC`,
   ).bind(...bindings).all<ProductRow>();
   return json({ items: products.results.map(productResponse), total: products.results.length });
 }
@@ -221,19 +229,36 @@ async function createProduct(request: Request): Promise<Response> {
   const input = await readJson(request);
   const errors = productErrors(input);
   if (errors.length > 0) throw new ApiFault(400, 'VALIDATION_ERROR', 'Validation failed.', errors);
-  const product = input as { id: string; name: string; priceYen: string; stock: number; weightKg: number };
+  const product = input as { id: string; name: string; nameJa?: string | null; nameZh?: string | null; priceYen: string; stock: number; weightKg: number };
   if (await productById(product.id)) throw new ApiFault(409, 'PRODUCT_EXISTS', 'A product with this ID already exists.');
   const database = await ensureDatabase();
+  const names = normalizedProductNames(product);
   await database.prepare(
-    'INSERT INTO products(id, name, price_yen, stock, weight_kg) VALUES (?, ?, ?, ?, ?)',
-  ).bind(product.id, product.name.trim(), product.priceYen, product.stock, product.weightKg).run();
+    'INSERT INTO products(id, name, name_ja, name_zh, price_yen, stock, weight_kg) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).bind(product.id, names.name, names.name_ja, names.name_zh, product.priceYen, product.stock, product.weightKg).run();
   return sessionResponse(json(productResponse({
     id: product.id,
-    name: product.name.trim(),
+    ...names,
     price_yen: product.priceYen,
     stock: product.stock,
     weight_kg: product.weightKg,
   }), 201), csrf);
+}
+
+async function updateProductNames(request: Request, id: string): Promise<Response> {
+  const csrf = await requireCsrf(request);
+  await requireUser(request, 'ADMIN');
+  const input = await readJson(request);
+  const errors = productNameErrors(input);
+  if (errors.length > 0) throw new ApiFault(400, 'VALIDATION_ERROR', 'Validation failed.', errors);
+  if (!await productById(id)) throw new ApiFault(404, 'PRODUCT_NOT_FOUND', 'Product was not found.');
+  const names = normalizedProductNames(input as { name: string; nameJa?: string | null; nameZh?: string | null });
+  const database = await ensureDatabase();
+  await database.prepare('UPDATE products SET name = ?, name_ja = ?, name_zh = ? WHERE id = ?')
+    .bind(names.name, names.name_ja, names.name_zh, id).run();
+  const updated = await productById(id);
+  if (!updated) throw new ApiFault(404, 'PRODUCT_NOT_FOUND', 'Product was not found.');
+  return sessionResponse(json(productResponse(updated)), csrf);
 }
 
 async function updateProductStock(request: Request, id: string): Promise<Response> {
@@ -285,11 +310,11 @@ async function persistOrder(customerName: string, requestedItems: RequestedItem[
     ).bind(orderId, customerName, order.totalPriceYen, order.totalWeightKg, order.estimatedBoxes, new Date().toISOString()),
     ...order.items.map((item, index) => database.prepare(
       `INSERT INTO order_items(
-        order_id, item_order, product_id, product_name, unit_price_yen,
+        order_id, item_order, product_id, product_name, product_name_ja, product_name_zh, unit_price_yen,
         unit_weight_kg, quantity, subtotal_yen, total_weight_kg
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
-      orderId, index, item.productId, item.productName, item.unitPriceYen,
+      orderId, index, item.productId, item.productName, item.productNameJa ?? null, item.productNameZh ?? null, item.unitPriceYen,
       item.unitWeightKg, item.quantity, item.subtotalYen, item.totalWeightKg,
     )),
     database.prepare(updateSql).bind(...updateBindings),
@@ -423,6 +448,9 @@ async function dispatch(request: Request): Promise<Response> {
   if (parts[0] === 'products' && parts.length === 2 && method === 'GET') return getProduct(parts[1]);
   if (parts[0] === 'products' && parts.length === 3 && parts[2] === 'stock' && method === 'PATCH') {
     return updateProductStock(request, parts[1]);
+  }
+  if (parts[0] === 'products' && parts.length === 3 && parts[2] === 'names' && method === 'PATCH') {
+    return updateProductNames(request, parts[1]);
   }
   if (parts[0] === 'products' && parts.length === 2 && method === 'DELETE') return deleteProduct(request, parts[1]);
   if (parts.join('/') === 'orders/me' && method === 'GET') return myOrders(request);

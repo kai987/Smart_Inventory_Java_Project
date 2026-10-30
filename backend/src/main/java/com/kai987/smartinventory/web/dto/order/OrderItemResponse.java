@@ -1,5 +1,7 @@
 package com.kai987.smartinventory.web.dto.order;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 public record OrderItemResponse(
         String productId,
         String productName,
@@ -7,5 +9,7 @@ public record OrderItemResponse(
         double unitWeightKg,
         int quantity,
         String subtotalYen,
-        double totalWeightKg) {
+        double totalWeightKg,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String productNameJa,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String productNameZh) {
 }

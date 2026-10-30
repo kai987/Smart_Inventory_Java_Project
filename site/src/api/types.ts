@@ -16,6 +16,8 @@ export type CsrfToken = {
 export type Product = {
   id: string
   name: string
+  nameJa?: string
+  nameZh?: string
   priceYen: YenAmount
   stock: number
   weightKg: number
@@ -30,6 +32,8 @@ export type ProductList = {
 export type OrderItem = {
   productId: string
   productName: string
+  productNameJa?: string
+  productNameZh?: string
   unitPriceYen: YenAmount
   unitWeightKg: number
   quantity: number
@@ -90,6 +94,8 @@ export type ProductFilters = {
 export type CreateProductRequest = {
   id: string
   name: string
+  nameJa?: string
+  nameZh?: string
   priceYen: YenAmount
   stock: number
   weightKg: number

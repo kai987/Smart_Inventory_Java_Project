@@ -205,7 +205,15 @@ impl Store {
             .filter(|product| {
                 (!in_stock_only || product.stock > 0)
                     && (product.id.to_lowercase().contains(&keyword)
-                        || product.name.to_lowercase().contains(&keyword))
+                        || product.name.to_lowercase().contains(&keyword)
+                        || product
+                            .name_ja
+                            .as_deref()
+                            .is_some_and(|name| name.to_lowercase().contains(&keyword))
+                        || product
+                            .name_zh
+                            .as_deref()
+                            .is_some_and(|name| name.to_lowercase().contains(&keyword)))
             })
             .cloned()
             .collect()
@@ -227,6 +235,20 @@ impl Store {
         stock: i32,
         weight_kg: f64,
     ) -> Result<Product, DomainError> {
+        self.add_product_with_names(id, name, price_yen, stock, weight_kg, None, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_product_with_names(
+        &mut self,
+        id: &str,
+        name: &str,
+        price_yen: &str,
+        stock: i32,
+        weight_kg: f64,
+        name_ja: Option<String>,
+        name_zh: Option<String>,
+    ) -> Result<Product, DomainError> {
         if !price_yen.starts_with(|character: char| ('1'..='9').contains(&character))
             || !price_yen.bytes().all(|byte| byte.is_ascii_digit())
         {
@@ -235,7 +257,14 @@ impl Store {
         let price = price_yen
             .parse::<i64>()
             .map_err(|_| validation("priceYen", "Price is outside the supported range."))?;
-        let product = Product::new(id.to_owned(), name.to_owned(), price, stock, weight_kg)?;
+        let product = Product::new(
+            id.to_owned(),
+            name.trim().to_owned(),
+            price,
+            stock,
+            weight_kg,
+        )?
+        .with_names(name_ja, name_zh)?;
         if self.products.iter().any(|existing| existing.id == id) {
             return Err(DomainError::new(Code::ProductExists));
         }
@@ -247,6 +276,37 @@ impl Store {
         )])?;
         self.products = replacement;
         Ok(product)
+    }
+
+    pub fn update_names(
+        &mut self,
+        id: &str,
+        name: &str,
+        name_ja: Option<String>,
+        name_zh: Option<String>,
+    ) -> Result<Product, DomainError> {
+        let index = self
+            .products
+            .iter()
+            .position(|product| product.id == id)
+            .ok_or_else(|| DomainError::new(Code::ProductNotFound))?;
+        let current = &self.products[index];
+        let updated = Product::new(
+            current.id.clone(),
+            name.trim().to_owned(),
+            current.price_yen,
+            current.stock,
+            current.weight_kg,
+        )?
+        .with_names(name_ja, name_zh)?;
+        let mut replacement = self.products.clone();
+        replacement[index] = updated.clone();
+        self.persist(vec![(
+            1,
+            csv_lines(replacement.iter().map(Product::to_csv)),
+        )])?;
+        self.products = replacement;
+        Ok(updated)
     }
 
     pub fn update_stock(&mut self, id: &str, stock: i32) -> Result<Product, DomainError> {
@@ -946,6 +1006,60 @@ mod tests {
         assert_eq!(error.field_errors[0].field, "items[0].quantity");
         assert_eq!(store.get_product("P001").unwrap().stock, 3);
         assert_eq!(store.orders.len(), 1);
+    }
+
+    #[test]
+    fn translated_names_search_update_and_snapshot_survive_delete_and_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,10,1.5\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        store
+            .add_product_with_names(
+                "P900",
+                "Travel Cup",
+                "1200",
+                4,
+                0.3,
+                Some("トラベルカップ".into()),
+                Some("旅行杯".into()),
+            )
+            .unwrap();
+        assert_eq!(store.list_products(Some("旅行"), false)[0].id, "P900");
+        let order = store
+            .create_order("alice", vec![request("P900", 1)])
+            .unwrap();
+        store
+            .update_names("P900", "New Cup", Some("新しいカップ".into()), None)
+            .unwrap();
+        assert_eq!(store.get_product("P900").unwrap().stock, 3);
+        assert_eq!(order.items[0].product_name_zh.as_deref(), Some("旅行杯"));
+        store.delete_product("P900").unwrap();
+        drop(store);
+        let reopened = Store::open(temp.path()).unwrap();
+        assert_eq!(
+            reopened.orders[0].items[0].product_name_ja.as_deref(),
+            Some("トラベルカップ")
+        );
+        assert_eq!(
+            reopened.orders[0].items[0].product_name_zh.as_deref(),
+            Some("旅行杯")
+        );
+    }
+
+    #[test]
+    fn translated_name_update_failure_leaves_disk_and_memory_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path(), "P001,Laptop,1000,10,1.5\n", "");
+        let mut store = Store::open(temp.path()).unwrap();
+        let before = fs::read(temp.path().join("products.csv")).unwrap();
+        store.fail_after_writes = Some(1);
+        assert!(
+            store
+                .update_names("P001", "Updated", Some("変更".into()), None)
+                .is_err()
+        );
+        assert_eq!(store.get_product("P001").unwrap().name, "Laptop");
+        assert_eq!(fs::read(temp.path().join("products.csv")).unwrap(), before);
     }
 
     #[test]

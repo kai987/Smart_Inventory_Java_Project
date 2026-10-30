@@ -81,6 +81,36 @@ class DomainRegressionTest {
     }
 
     @Test
+    void translatedProductNamesRoundTripAndSnapshotSurvivesRenameAndDeletion() throws Exception {
+        Product product = new Product("P900", "Travel Cup", 1200, 4, 0.3,
+                "  トラベルカップ  ", "旅行杯");
+        assertEquals("トラベルカップ", product.getNameJa());
+        assertEquals("旅行杯", Product.fromCsv(product.toCsv()).getNameZh());
+        assertEquals("P001,Laptop,1000,1,1.0", new Product("P001", "Laptop", 1000, 1, 1).toCsv());
+        assertNull(Product.fromCsv("P900,Travel Cup,1200,4,0.3,bad:name,旅行杯"));
+        InventoryManager inventory = inventoryWith(product);
+        assertEquals("P900", inventory.search("旅行").getFirst().getId());
+        assertEquals("P900", inventory.search("トラベル").getFirst().getId());
+        OrderManager orders = new OrderManager(inventory);
+        Order order = orders.createOrderOrThrow("alice", List.of(new OrderManager.RequestedItem("P900", 1)));
+        inventory.replaceProduct(new Product("P900", "New Cup", 1200, 3, 0.3, "新しいカップ", null));
+        inventory.removeProduct("P900");
+        Order restored = orders.parseOrder(order.toCsv());
+        assertNotNull(restored);
+        assertEquals("Travel Cup", restored.getItems().getFirst().getProductName());
+        assertEquals("トラベルカップ", restored.getItems().getFirst().getProductNameJa());
+        assertEquals("旅行杯", restored.getItems().getFirst().getProductNameZh());
+        CsvFileManager files = new CsvFileManager(tempDirectory);
+        files.saveAll(List.of(new User("alice", "{noop}pass123", Role.CUSTOMER)),
+                List.of(), List.of(order));
+        assertEquals("旅行杯", files.loadOrders(new InventoryManager()).getFirst().getItems().getFirst().getProductNameZh());
+        assertThrows(IllegalArgumentException.class, () -> new Product("P900", "Travel Cup", 1200, 4, 0.3, "日".repeat(101), null));
+        assertThrows(IllegalArgumentException.class, () -> Product.normalizeTranslation(" ".repeat(101)));
+        assertThrows(IllegalArgumentException.class, () -> Product.normalizeTranslation("\n"));
+        assertNull(Product.normalizeTranslation(" "));
+    }
+
+    @Test
     void wholeNumberDecimalPriceMigratesAndInvalidCsvValuesAreRejected() {
         Product migrated = Product.fromCsv("P001,Laptop,120000.0,8,3.0");
         assertNotNull(migrated);

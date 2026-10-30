@@ -54,7 +54,7 @@ export default function AdminOrdersPage() {
               <div className={styles.adminOrderItems}>
                 {order.items.map((item) => (
                   <div className={styles.adminOrderItem} key={item.productId}>
-                    <div><span>{t('admin.product')}</span><strong>{productName(item.productId, item.productName)} · {item.productId}</strong></div>
+                    <div><span>{t('admin.product')}</span><strong>{productName(item.productId, item.productName, { nameJa: item.productNameJa, nameZh: item.productNameZh })} · {item.productId}</strong></div>
                     <div><span>{t('admin.unitPrice')}</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
                     <div><span>{t('admin.quantity')}</span><strong>{formatNumber(item.quantity)}</strong></div>
                     <div><span>{t('admin.subtotal')}</span><strong>{formatYen(item.subtotalYen)}</strong></div>

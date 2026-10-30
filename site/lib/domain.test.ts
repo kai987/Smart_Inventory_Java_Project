@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateOrder, normalizeRequestedItems, productErrors, registrationErrors } from './domain';
+import { calculateOrder, normalizedProductNames, normalizeRequestedItems, productErrors, productNameErrors, registrationErrors } from './domain';
 
 describe('Sites domain rules', () => {
   it('merges duplicate order rows before calculation', () => {
@@ -42,5 +42,27 @@ describe('Sites domain rules', () => {
         { field: 'password', message: 'Password must not exceed 72 UTF-8 bytes.' },
       ]);
     }
+  });
+
+  it('validates optional names without requiring translations for older clients', () => {
+    expect(productNameErrors({ name: 'Mug' })).toEqual([]);
+    expect(productNameErrors({ name: 'Mug', nameJa: '', nameZh: '   ' })).toEqual([]);
+    expect(productNameErrors({ name: 'Mug', nameJa: null, nameZh: null })).toEqual([]);
+    expect(productNameErrors({ name: 'Mug', nameJa: 'あ'.repeat(100), nameZh: '中'.repeat(100) })).toEqual([]);
+    expect(productNameErrors({ name: 'Mug', nameJa: false, nameZh: 123 }).map((error) => error.field))
+      .toEqual(['nameJa', 'nameZh']);
+    expect(productNameErrors({ name: ' ', nameJa: 'あ'.repeat(101), nameZh: 'bad,name' }).map((error) => error.field))
+      .toEqual(['name', 'nameJa', 'nameZh']);
+    expect(normalizedProductNames({ name: ' Mug ', nameJa: ' マグ ', nameZh: ' ' }))
+      .toEqual({ name: 'Mug', name_ja: 'マグ', name_zh: null });
+  });
+
+  it('copies available custom translations into order snapshots without adding empty fields', () => {
+    const product = { id: 'P900', name: 'Mug', name_ja: 'マグ', name_zh: '杯子', price_yen: '900', stock: 3, weight_kg: 0.2 };
+    expect(calculateOrder([product], [{ productId: 'P900', quantity: 1 }]).items[0])
+      .toMatchObject({ productName: 'Mug', productNameJa: 'マグ', productNameZh: '杯子' });
+    const untranslated = calculateOrder([{ ...product, name_ja: null, name_zh: '' }], [{ productId: 'P900', quantity: 1 }]).items[0];
+    expect(untranslated).not.toHaveProperty('productNameJa');
+    expect(untranslated).not.toHaveProperty('productNameZh');
   });
 });

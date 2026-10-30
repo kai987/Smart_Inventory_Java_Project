@@ -101,12 +101,17 @@ public class SmartInventoryService {
 
     public Product addProduct(String id, String name, String priceYen, int stock,
             double weightKg) {
+        return addProduct(id, name, priceYen, stock, weightKg, null, null);
+    }
+
+    public Product addProduct(String id, String name, String priceYen, int stock,
+            double weightKg, String nameJa, String nameZh) {
         stateLock.writeLock().lock();
         try {
             long parsedPrice = parsePrice(priceYen);
             Product product;
             try {
-                product = new Product(id, name, parsedPrice, stock, weightKg);
+                product = new Product(id, name.trim(), parsedPrice, stock, weightKg, nameJa, nameZh);
             } catch (IllegalArgumentException exception) {
                 throw new DomainException(ErrorCode.VALIDATION_ERROR);
             }
@@ -117,6 +122,31 @@ public class SmartInventoryService {
                 files.saveProducts(inventory.getProducts());
             } catch (PersistenceException exception) {
                 inventory.removeProduct(id);
+                throw exception;
+            }
+            return inventory.findProductById(id);
+        } finally {
+            stateLock.writeLock().unlock();
+        }
+    }
+
+    public Product updateNames(String id, String name, String nameJa, String nameZh) {
+        stateLock.writeLock().lock();
+        try {
+            Product current = inventory.findProductById(id);
+            if (current == null) throw new DomainException(ErrorCode.PRODUCT_NOT_FOUND);
+            Product replacement;
+            try {
+                replacement = new Product(id, name.trim(), current.getPriceYen(), current.getStock(),
+                        current.getWeightKg(), nameJa, nameZh);
+            } catch (IllegalArgumentException exception) {
+                throw new DomainException(ErrorCode.VALIDATION_ERROR);
+            }
+            inventory.replaceProduct(replacement);
+            try {
+                files.saveProducts(inventory.getProducts());
+            } catch (PersistenceException exception) {
+                inventory.replaceProduct(current);
                 throw exception;
             }
             return inventory.findProductById(id);

@@ -14,6 +14,8 @@ export const productApi = {
   },
   get: async (id: string): Promise<Product> => (await httpClient.get<Product>(`/products/${encodeURIComponent(id)}`)).data,
   create: async (request: CreateProductRequest, signal?: AbortSignal): Promise<Product> => (await httpClient.post<Product>('/products', request, signal === undefined ? {} : { signal })).data,
+  updateNames: async (id: string, names: Pick<CreateProductRequest, 'name' | 'nameJa' | 'nameZh'>, signal?: AbortSignal): Promise<Product> =>
+    (await httpClient.patch<Product>(`/products/${encodeURIComponent(id)}/names`, names, signal === undefined ? {} : { signal })).data,
   updateStock: async (id: string, stock: number, signal?: AbortSignal): Promise<Product> =>
     (await httpClient.patch<Product>(`/products/${encodeURIComponent(id)}/stock`, { stock }, signal === undefined ? {} : { signal })).data,
   remove: async (id: string, signal?: AbortSignal): Promise<void> => {

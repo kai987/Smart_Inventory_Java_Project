@@ -18,6 +18,7 @@ import com.kai987.smartinventory.web.dto.product.CreateProductRequest;
 import com.kai987.smartinventory.web.dto.product.ProductListResponse;
 import com.kai987.smartinventory.web.dto.product.ProductResponse;
 import com.kai987.smartinventory.web.dto.product.UpdateStockRequest;
+import com.kai987.smartinventory.web.dto.product.UpdateProductNamesRequest;
 import com.kai987.smartinventory.web.mapper.ApiMapper;
 
 import jakarta.validation.Valid;
@@ -48,7 +49,7 @@ public class ProductController {
     @PostMapping
     public ResponseEntity<ProductResponse> create(@Valid @RequestBody CreateProductRequest request) {
         Product product = service.addProduct(request.id(), request.name(), request.priceYen(),
-                request.stock(), request.weightKg());
+                request.stock(), request.weightKg(), request.nameJa(), request.nameZh());
         return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toProduct(product));
     }
 
@@ -62,5 +63,11 @@ public class ProductController {
     public ResponseEntity<Void> delete(@PathVariable String id) {
         service.deleteProduct(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/names")
+    public ProductResponse updateNames(@PathVariable String id,
+            @Valid @RequestBody UpdateProductNamesRequest request) {
+        return mapper.toProduct(service.updateNames(id, request.name(), request.nameJa(), request.nameZh()));
     }
 }

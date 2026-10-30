@@ -73,7 +73,7 @@ export default function AdminDashboardPage() {
             <div className={styles.emptyPanel}><Archive aria-hidden="true" /><span>{t('admin.noLowStock')}</span></div>
           ) : (
             <div className={styles.miniList}>
-              {lowStock.map((product) => <div className={styles.miniRow} key={product.id}><strong>{productName(product.id, product.name)}</strong><span>{product.id}</span><b>{t('admin.stockLeft', { stock: formatNumber(product.stock) })}</b></div>)}
+              {lowStock.map((product) => <div className={styles.miniRow} key={product.id}><strong>{productName(product.id, product.name, product)}</strong><span>{product.id}</span><b>{t('admin.stockLeft', { stock: formatNumber(product.stock) })}</b></div>)}
             </div>
           )}
         </section>

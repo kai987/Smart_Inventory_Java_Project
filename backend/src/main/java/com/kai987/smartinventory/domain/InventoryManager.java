@@ -59,6 +59,15 @@ public final class InventoryManager {
         return true;
     }
 
+    public boolean replaceProduct(Product replacement) {
+        Product current = productMap.get(replacement.getId());
+        if (current == null) return false;
+        Product stored = replacement.copy();
+        products.set(products.indexOf(current), stored);
+        productMap.put(stored.getId(), stored);
+        return true;
+    }
+
     public boolean removeProduct(String id) {
         Product product = productMap.remove(id);
         return product != null && products.remove(product);
@@ -68,7 +77,9 @@ public final class InventoryManager {
         String normalized = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         return products.stream()
                 .filter(product -> product.getId().toLowerCase(Locale.ROOT).contains(normalized)
-                        || product.getName().toLowerCase(Locale.ROOT).contains(normalized))
+                        || product.getName().toLowerCase(Locale.ROOT).contains(normalized)
+                        || (product.getNameJa() != null && product.getNameJa().toLowerCase(Locale.ROOT).contains(normalized))
+                        || (product.getNameZh() != null && product.getNameZh().toLowerCase(Locale.ROOT).contains(normalized)))
                 .map(Product::copy)
                 .toList();
     }

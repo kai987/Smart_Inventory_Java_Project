@@ -8,6 +8,8 @@ export type FieldError = {
 export type ProductRecord = {
   id: string;
   name: string;
+  name_ja?: string | null;
+  name_zh?: string | null;
   price_yen: string;
   stock: number;
   weight_kg: number;
@@ -21,6 +23,8 @@ export type RequestedItem = {
 export type CalculatedItem = {
   productId: string;
   productName: string;
+  productNameJa?: string;
+  productNameZh?: string;
   unitPriceYen: string;
   unitWeightKg: number;
   quantity: number;
@@ -60,6 +64,32 @@ export function registrationErrors(value: unknown): FieldError[] {
   return errors;
 }
 
+export function productNameErrors(value: unknown): FieldError[] {
+  if (typeof value !== 'object' || value === null) {
+    return [{ field: 'request', message: 'A JSON request body is required.' }];
+  }
+  const input = value as Record<string, unknown>;
+  const errors: FieldError[] = [];
+  if (typeof input.name !== 'string' || input.name.trim() === '' || input.name.length > 100 || reservedCharacter.test(input.name)) {
+    errors.push({ field: 'name', message: 'Name is required, must be at most 100 characters, and cannot contain CSV delimiters.' });
+  }
+  for (const field of ['nameJa', 'nameZh']) {
+    const name = input[field];
+    if (name !== undefined && name !== null && (typeof name !== 'string' || name.length > 100 || reservedCharacter.test(name))) {
+      errors.push({ field, message: 'Name must be at most 100 characters and cannot contain CSV delimiters.' });
+    }
+  }
+  return errors;
+}
+
+export function normalizedProductNames(input: { name: string; nameJa?: string | null; nameZh?: string | null }) {
+  return {
+    name: input.name.trim(),
+    name_ja: input.nameJa?.trim() || null,
+    name_zh: input.nameZh?.trim() || null,
+  };
+}
+
 export function productErrors(value: unknown): FieldError[] {
   if (typeof value !== 'object' || value === null) {
     return [{ field: 'request', message: 'A JSON request body is required.' }];
@@ -69,9 +99,7 @@ export function productErrors(value: unknown): FieldError[] {
   if (typeof input.id !== 'string' || !/^P\d{3}$/.test(input.id)) {
     errors.push({ field: 'id', message: 'Product ID must use P followed by three digits.' });
   }
-  if (typeof input.name !== 'string' || input.name.trim() === '' || input.name.length > 100 || reservedCharacter.test(input.name)) {
-    errors.push({ field: 'name', message: 'Name is required, must be at most 100 characters, and cannot contain CSV delimiters.' });
-  }
+  errors.push(...productNameErrors(value));
   if (typeof input.priceYen !== 'string' || !/^[1-9]\d*$/.test(input.priceYen)) {
     errors.push({ field: 'priceYen', message: 'Price must be a positive whole-yen amount.' });
   } else {
@@ -154,6 +182,8 @@ export function calculateOrder(products: ProductRecord[], requestedItems: Reques
     return {
       productId: product.id,
       productName: product.name,
+      ...(product.name_ja ? { productNameJa: product.name_ja } : {}),
+      ...(product.name_zh ? { productNameZh: product.name_zh } : {}),
       unitPriceYen: product.price_yen,
       unitWeightKg: product.weight_kg,
       quantity: requested.quantity,

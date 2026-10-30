@@ -162,6 +162,105 @@ fn assert_error(reply: &Reply, status: StatusCode, code: &str, path: &str) {
 }
 
 #[tokio::test]
+async fn multilingual_custom_product_names_require_admin_and_survive_order_snapshot() {
+    let (_directory, app) = app();
+    let path = "/api/products/P900/names";
+    let body = json!({"name":"Travel Cup","nameJa":"トラベルカップ","nameZh":"旅行杯"});
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    assert_error(
+        &customer.send(Method::PATCH, path, Some(body.clone())).await,
+        StatusCode::FORBIDDEN,
+        "FORBIDDEN",
+        path,
+    );
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    let created = admin
+        .send(
+            Method::POST,
+            "/api/products",
+            Some(json!({
+                "id":"P900", "name":"Travel Cup", "nameJa":" トラベルカップ ", "nameZh":"旅行杯",
+                "priceYen":"1200", "stock":4, "weightKg":0.3
+            })),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    assert_eq!(created.body["nameJa"], "トラベルカップ");
+    assert_eq!(
+        admin
+            .send(Method::GET, "/api/products?q=%E6%97%85%E8%A1%8C", None)
+            .await
+            .body["items"][0]["id"],
+        "P900"
+    );
+    let order = customer
+        .send(
+            Method::POST,
+            "/api/orders",
+            Some(json!({"items":[{"productId":"P900","quantity":1}]})),
+        )
+        .await;
+    assert_eq!(order.status, StatusCode::CREATED, "{}", order.text);
+    assert_eq!(order.body["items"][0]["productNameJa"], "トラベルカップ");
+    let updated = admin
+        .send(
+            Method::PATCH,
+            path,
+            Some(json!({"name":"New Cup","nameJa":" ","nameZh":null})),
+        )
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.text);
+    assert!(updated.body.get("nameJa").is_none());
+    assert!(updated.body.get("nameZh").is_none());
+    assert_eq!(updated.body["stock"], 3);
+    for invalid in [
+        json!({"name":"Bad","nameJa":123}),
+        json!({"name":"Bad","nameZh":"bad:name"}),
+        json!({"name":"Bad","nameJa":"日".repeat(101)}),
+        json!({"name":" "}),
+    ] {
+        assert_error(
+            &admin.send(Method::PATCH, path, Some(invalid)).await,
+            StatusCode::BAD_REQUEST,
+            "VALIDATION_ERROR",
+            path,
+        );
+    }
+    assert_eq!(
+        admin
+            .send(Method::GET, "/api/products/P900", None)
+            .await
+            .body["name"],
+        "New Cup"
+    );
+    let previous_csrf = admin.csrf.take();
+    assert_error(
+        &admin.send(Method::PATCH, path, Some(body)).await,
+        StatusCode::FORBIDDEN,
+        "CSRF_INVALID",
+        path,
+    );
+    admin.csrf = previous_csrf;
+    assert_eq!(
+        admin
+            .send(Method::DELETE, "/api/products/P900", None)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    let saved = customer.send(Method::GET, "/api/orders/me", None).await;
+    let custom_order = saved.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|saved| saved["orderId"] == order.body["orderId"])
+        .unwrap();
+    assert_eq!(custom_order["items"][0]["productNameZh"], "旅行杯");
+}
+
+#[tokio::test]
 async fn public_search_money_and_spa_contract() {
     let (_directory, app) = app();
     let mut client = Client::new(&app);

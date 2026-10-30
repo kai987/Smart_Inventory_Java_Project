@@ -6,7 +6,7 @@ The hosted database is intentionally separate from the Spring Boot application's
 
 The storefront adds 20 demo products (P005–P024) for a 24-product catalog across six categories. This is a versioned, insert-only data expansion outside schema migrations: an atomic D1 batch checks and records its completion marker, skips colliding product IDs, and never overwrites existing inventory or orders. Later cold starts do not restore products deleted after expansion. Shared category metadata and local product photographs power category filtering, price sorting, and responsive product cards without changing the Java/Rust API contract or their local CSV data.
 
-Shared catalog metadata also localizes the 24 standard product names in English, Japanese, and Simplified Chinese across all customer/admin views and image accessibility text. Product-name search matches all three languages without replacing raw API/cache values. Both the ID and original canonical name must match before localization; custom and renamed products remain literal. Saved order names are translated only when rendered, never rewritten in D1.
+Shared catalog metadata localizes the 24 standard product names in English, Japanese, and Simplified Chinese. Administrators can also store a required English/default name and optional Japanese/Chinese names for custom products, both on creation and through Edit names. Saved translations take precedence over built-in names; missing custom translations use the default name. Search matches all saved names without replacing raw API/cache values. New orders snapshot all saved language names, independently of later product renames or deletion; existing historical records are not backfilled or rewritten.
 
 ## Online demo
 

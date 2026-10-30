@@ -106,6 +106,19 @@ describe('ProductImage', () => {
     expect(fallback).toHaveAttribute('data-variant', 'cart')
   })
 
+  it.each([
+    ['ja', '陶器カップの商品画像'],
+    ['zh-CN', '陶瓷杯 的商品图片'],
+  ] as const)('uses a saved custom name for fallback accessibility in %s', (language, label) => {
+    renderProductImage(<ProductImage productId="P910" productName="Ceramic Cup" nameJa="陶器カップ" nameZh="陶瓷杯" variant="catalog" />, language)
+    expect(screen.getByRole('img', { name: label })).not.toBeInstanceOf(HTMLImageElement)
+  })
+
+  it('keeps the canonical photo identity while using an overridden localized alternative name', () => {
+    renderProductImage(<ProductImage productId="P001" productName="Laptop" nameJa="業務用ノートPC" variant="catalog" />, 'ja')
+    expect(screen.getByRole('img', { name: '業務用ノートPCの商品画像' })).toHaveAttribute('src', '/product-images/laptop.webp')
+  })
+
   it('replaces an image with the fallback after a load error', () => {
     renderProductImage(<ProductImage productId="P001" productName="Laptop" variant="catalog" />)
     fireEvent.error(screen.getByRole('img', { name: 'Laptop product' }))

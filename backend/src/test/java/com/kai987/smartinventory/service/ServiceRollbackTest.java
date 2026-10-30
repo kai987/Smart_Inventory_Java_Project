@@ -36,6 +36,16 @@ class ServiceRollbackTest {
     }
 
     @Test
+    void nameUpdateRollsBackWhenPersistenceFails() {
+        PasswordEncoder encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        SmartInventoryService service = new SmartInventoryService(new FailingCsvFiles(tempDirectory, encoder), encoder);
+        assertThrows(PersistenceException.class, () -> service.updateNames("P001", "Updated", "変更", "修改"));
+        assertEquals("Laptop", service.getProduct("P001").getName());
+        assertEquals(null, service.getProduct("P001").getNameJa());
+        assertEquals(5, service.getProduct("P001").getStock());
+    }
+
+    @Test
     void orderStockAndOrderListRollBackWhenMultiFileSaveFails() {
         PasswordEncoder encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
         FailingCsvFiles files = new FailingCsvFiles(tempDirectory, encoder);

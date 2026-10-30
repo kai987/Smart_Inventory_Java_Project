@@ -23,8 +23,11 @@ beforeEach(() => {
   sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
   // Only the test harness applies the real migration; request code must not.
-  sqlite.exec(readFileSync(new URL('../drizzle/0000_dashing_betty_brant.sql', import.meta.url), 'utf8')
-    .replaceAll('--> statement-breakpoint', ''));
+  const journal = JSON.parse(readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8')) as { entries: { tag: string }[] };
+  for (const migration of journal.entries) {
+    sqlite.exec(readFileSync(new URL(`../drizzle/${migration.tag}.sql`, import.meta.url), 'utf8')
+      .replaceAll('--> statement-breakpoint', ''));
+  }
   preparedSql = [];
   batchCount = 0;
   failAfterStatement = null;
@@ -74,7 +77,7 @@ describe('D1 bootstrap without request-time schema changes', () => {
 
   it('preserves an existing partial dataset and adds only the new catalog version', async () => {
     sqlite.exec("INSERT INTO users VALUES ('existing','unused','CUSTOMER')");
-    sqlite.exec("INSERT INTO products VALUES ('P999','Existing item','123',7,1)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P999','Existing item','123',7,1)");
     const { ensureDatabase } = await coldModule();
     await ensureDatabase();
     expect(counts()).toEqual([1, 21, 0, 0, 0, 1]);
@@ -132,7 +135,7 @@ describe('D1 bootstrap without request-time schema changes', () => {
 
   it('retries a failed catalog upgrade without modifying an existing dataset', async () => {
     sqlite.exec("INSERT INTO users VALUES ('existing','unused','CUSTOMER')");
-    sqlite.exec("INSERT INTO products VALUES ('P001','Existing laptop','99000',2,2.5)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P001','Existing laptop','99000',2,2.5)");
     failAfterStatement = 3;
     const { ensureDatabase } = await coldModule();
     await expect(ensureDatabase()).rejects.toThrow('simulated batch failure');
@@ -165,10 +168,10 @@ describe('versioned catalog expansion', () => {
 
   function insertExistingData() {
     sqlite.exec("INSERT INTO users VALUES ('existing','unused','CUSTOMER')");
-    sqlite.exec("INSERT INTO products VALUES ('P001','Custom Laptop','118000',3,2.5)");
-    sqlite.exec("INSERT INTO products VALUES ('P002','Existing Mouse','2100',17,0.18)");
-    sqlite.exec("INSERT INTO products VALUES ('P003','Existing Keyboard','6500',0,0.7)");
-    sqlite.exec("INSERT INTO products VALUES ('P004','Existing Monitor','33000',2,4.7)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P001','Custom Laptop','118000',3,2.5)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P002','Existing Mouse','2100',17,0.18)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P003','Existing Keyboard','6500',0,0.7)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P004','Existing Monitor','33000',2,4.7)");
     sqlite.exec("INSERT INTO orders VALUES ('existing-order','existing','118000',2.5,1,'2026-01-01T00:00:00Z')");
     sqlite.exec("INSERT INTO order_items(order_id,item_order,product_id,product_name,unit_price_yen,unit_weight_kg,quantity,subtotal_yen,total_weight_kg) VALUES ('existing-order',0,'P001','Historical Laptop','118000',2.5,1,'118000',2.5)");
   }
@@ -198,7 +201,7 @@ describe('versioned catalog expansion', () => {
     ]);
     await ensureExpandedCatalog(context.database!);
     expect(products()).toEqual(catalogExpansionProducts.map(([id, name, price_yen, stock, weight_kg]) => ({
-      id, name, price_yen, stock, weight_kg,
+      id, name, price_yen, stock, weight_kg, name_ja: null, name_zh: null,
     })));
     expect(catalogExpansionProducts.map(([id]) => id)).toEqual(
       Array.from({ length: 20 }, (_, index) => `P${String(index + 5).padStart(3, '0')}`),
@@ -210,7 +213,7 @@ describe('versioned catalog expansion', () => {
 
   it('does not replace original inventory, historical orders, or colliding product IDs', async () => {
     insertExistingData();
-    sqlite.exec("INSERT INTO products VALUES ('P005','My existing product','9876',7,1.7)");
+    sqlite.exec("INSERT INTO products(id,name,price_yen,stock,weight_kg) VALUES ('P005','My existing product','9876',7,1.7)");
     const existingProducts = products();
     const existingOrders = sqlite.prepare('SELECT * FROM orders').all();
     const existingItems = sqlite.prepare('SELECT * FROM order_items').all();

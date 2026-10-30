@@ -20,6 +20,14 @@ const messageCases = [
     props: { kind: 'stockAdjusted', productId: 'P005', originalName: 'Desk Lamp', stock: 12000 },
     messages: ['Desk Lamp was adjusted to the available stock (12,000).', 'デスクライトの数量を在庫数（12,000）に調整しました。', '已将 台灯 的数量调整为可用库存（12,000）。'],
   },
+  {
+    props: { kind: 'added', productId: 'P910', originalName: 'Ceramic Cup', nameJa: '陶器カップ', nameZh: '陶瓷杯' },
+    messages: ['Ceramic Cup added to your cart.', '陶器カップをカートに追加しました。', '已将 陶瓷杯 加入购物车。'],
+  },
+  {
+    props: { kind: 'stockAdjusted', productId: 'P910', originalName: 'Ceramic Cup', nameJa: '陶器カップ', nameZh: '陶瓷杯', stock: 12000 },
+    messages: ['Ceramic Cup was adjusted to the available stock (12,000).', '陶器カップの数量を在庫数（12,000）に調整しました。', '已将 陶瓷杯 的数量调整为可用库存（12,000）。'],
+  },
 ] as const
 
 describe('ProductToastMessage', () => {
@@ -45,7 +53,7 @@ describe('ProductToastMessage', () => {
       expect(toast).toHaveTextContent(messages[2])
       expect(toast).not.toHaveTextContent(messages[1])
       expect(original).toEqual(props)
-      expect(original.originalName).toBe('Desk Lamp')
+      expect(original.originalName).toBe(props.originalName)
 
       act(() => { vi.advanceTimersByTime(2999) })
       expect(screen.getByRole('status')).toBe(toast)

@@ -82,6 +82,24 @@ describe('productCatalog', () => {
     expect(getLocalizedProductName(' p001 ', ' LAPTOP ', 'ja')).toBe('ノートパソコン')
   })
 
+  it('displays administrator-provided names in the selected language and falls back to the original', () => {
+    const custom = Object.freeze({ id: 'P910', name: 'Ceramic Travel Cup', nameJa: '陶器のトラベルカップ', nameZh: '陶瓷随行杯' })
+    expect(getLocalizedProductName(custom.id, custom.name, 'en', custom)).toBe('Ceramic Travel Cup')
+    expect(getLocalizedProductName(custom.id, custom.name, 'ja', custom)).toBe('陶器のトラベルカップ')
+    expect(getLocalizedProductName(custom.id, custom.name, 'zh-CN', custom)).toBe('陶瓷随行杯')
+    expect(getLocalizedProductName(custom.id, custom.name, 'ja', { nameJa: '  ' })).toBe('Ceramic Travel Cup')
+    expect(getLocalizedProductName(custom.id, custom.name, 'zh-CN', { nameJa: custom.nameJa })).toBe('Ceramic Travel Cup')
+    expect(custom.name).toBe('Ceramic Travel Cup')
+  })
+
+  it('prefers saved names over built-in translations without changing built-in fallback behavior', () => {
+    expect(getLocalizedProductName('P001', 'Laptop', 'ja', { nameJa: '業務用ノートPC' })).toBe('業務用ノートPC')
+    expect(getLocalizedProductName('P001', 'Laptop', 'zh-CN', { nameZh: '商务笔记本' })).toBe('商务笔记本')
+    expect(getLocalizedProductName('P001', 'Laptop', 'ja', {})).toBe('ノートパソコン')
+    expect(getLocalizedProductName('P001', 'Laptop', 'en', { nameJa: '業務用ノートPC' })).toBe('Laptop')
+    expect(getLocalizedProductName('P001', 'Renamed PC', 'ja', { nameJa: '新しいPC' })).toBe('新しいPC')
+  })
+
   it.each(localizedProducts)('searches %s using its ID and every localized name', (id, name, zhName, jaName) => {
     const original = Object.freeze({ id, name })
     for (const query of [id.toLowerCase(), name.toUpperCase(), zhName, jaName, zhName.slice(1), jaName.slice(1)]) {
@@ -95,6 +113,15 @@ describe('productCatalog', () => {
     expect(matchesProductSearch({ id: 'P001', name: 'Laptop' }, 'ＬＡＰ')).toBe(true)
     expect(matchesProductSearch({ id: 'P005', name: 'Desk Lamp' }, 'ﾃﾞｽｸ')).toBe(true)
     expect(matchesProductSearch({ id: 'P001', name: 'Laptop' }, '   ')).toBe(true)
+  })
+
+  it('searches custom names in every saved language regardless of the interface language', () => {
+    const custom = Object.freeze({ id: 'P910', name: 'Ceramic Travel Cup', nameJa: '陶器のトラベルカップ', nameZh: '陶瓷随行杯' })
+    for (const query of ['ｐ９１０', 'TRAVEL', 'トラベル', 'ﾄﾗﾍﾞﾙ', '随行']) {
+      expect(matchesProductSearch(custom, query)).toBe(true)
+    }
+    expect(matchesProductSearch(custom, 'ノートパソコン')).toBe(false)
+    expect(matchesProductSearch({ id: 'P910', name: 'Ceramic Travel Cup', nameJa: '' }, 'Cup')).toBe(true)
   })
 
   it('never gives renamed or ID-conflicting products stale translated search aliases', () => {

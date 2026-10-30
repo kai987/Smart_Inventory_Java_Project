@@ -10,6 +10,8 @@ export const users = sqliteTable('users', {
 export const products = sqliteTable('products', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  nameJa: text('name_ja'),
+  nameZh: text('name_zh'),
   priceYen: text('price_yen').notNull(),
   stock: integer('stock').notNull(),
   weightKg: real('weight_kg').notNull(),
@@ -37,6 +39,8 @@ export const orderItems = sqliteTable('order_items', {
   itemOrder: integer('item_order').notNull(),
   productId: text('product_id').notNull(),
   productName: text('product_name').notNull(),
+  productNameJa: text('product_name_ja'),
+  productNameZh: text('product_name_zh'),
   unitPriceYen: text('unit_price_yen').notNull(),
   unitWeightKg: real('unit_weight_kg').notNull(),
   quantity: integer('quantity').notNull(),

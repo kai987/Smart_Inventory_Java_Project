@@ -31,7 +31,7 @@ export function OrderCard({ order }: { order: Order }) {
           {order.items.map((item) => (
             <div className={styles.snapshot} key={item.productId}>
               <ProductImage productId={item.productId} productName={item.productName} variant="order" alt="" />
-              <div className={styles.snapshotName}><strong>{productName(item.productId, item.productName)}</strong><span>{item.productId}</span></div>
+              <div className={styles.snapshotName}><strong>{productName(item.productId, item.productName, { nameJa: item.productNameJa, nameZh: item.productNameZh })}</strong><span>{item.productId}</span></div>
               <div><span>{t('orders.unitPrice')}</span><strong>{formatYen(item.unitPriceYen)}</strong></div>
               <div><span>{t('orders.quantity')}</span><strong>{formatNumber(item.quantity)}</strong></div>
               <div><span>{t('orders.subtotal')}</span><strong>{formatYen(item.subtotalYen)}</strong></div>

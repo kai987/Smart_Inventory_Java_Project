@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -418,6 +419,63 @@ class ApiSecurityIntegrationTest {
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
         mockMvc.perform(get("/api/auth/me").session(rejectedCsrf.session()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Order(30)
+    void multilingualCustomNamesRequireAdminAndPersistOrderSnapshots() throws Exception {
+        MockHttpSession admin = login("admin", "admin123");
+        SessionCsrf adminCsrf = csrf(admin);
+        String path = "/api/products/P900/names";
+        mockMvc.perform(post("/api/products").session(admin)
+                        .header(adminCsrf.header(), adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"P900\",\"name\":\"Travel Cup\",\"nameJa\":\" トラベルカップ \",\"nameZh\":\"旅行杯\",\"priceYen\":\"1200\",\"stock\":4,\"weightKg\":0.3}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.nameJa").value("トラベルカップ"));
+        mockMvc.perform(get("/api/products").param("q", "旅行"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value("P900"));
+        MockHttpSession customer = login("customer", "user123");
+        SessionCsrf customerCsrf = csrf(customer);
+        mockMvc.perform(patch(path).session(customer)
+                        .header(customerCsrf.header(), customerCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Cup\"}"))
+                .andExpect(status().isForbidden());
+        MvcResult placed = mockMvc.perform(post("/api/orders").session(customer)
+                        .header(customerCsrf.header(), customerCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P900\",\"quantity\":1}]}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.items[0].productNameZh").value("旅行杯")).andReturn();
+        String orderId = objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asText();
+        mockMvc.perform(patch(path).session(admin).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"New Cup\"}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CSRF_INVALID"));
+        for (String invalidName : List.of("123", "true")) {
+            mockMvc.perform(post("/api/products").session(admin).header(adminCsrf.header(), adminCsrf.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"id\":\"P901\",\"name\":" + invalidName + ",\"priceYen\":\"1200\",\"stock\":4,\"weightKg\":0.3}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+            mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(), adminCsrf.token())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"name\":" + invalidName + "}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        mockMvc.perform(get("/api/products/P901")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/products/P900")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Travel Cup"));
+        for (String invalid : List.of("{\"name\":\"Bad\",\"nameJa\":123}", "{\"name\":\"Bad\",\"nameZh\":\"bad:name\"}",
+                "{\"name\":\"Bad\",\"nameJa\":\"" + "日".repeat(101) + "\"}", "{\"name\":\" \"}")) {
+            mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(), adminCsrf.token())
+                            .contentType(MediaType.APPLICATION_JSON).content(invalid))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(), adminCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"New Cup\",\"nameJa\":\" \",\"nameZh\":null}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nameJa").doesNotExist())
+                .andExpect(jsonPath("$.nameZh").doesNotExist()).andExpect(jsonPath("$.stock").value(3));
+        mockMvc.perform(delete("/api/products/P900").session(admin).header(adminCsrf.header(), adminCsrf.token()))
+                .andExpect(status().isNoContent());
+        MvcResult saved = mockMvc.perform(get("/api/orders/me").session(customer)).andExpect(status().isOk()).andReturn();
+        JsonNode snapshot = null;
+        for (JsonNode candidate : objectMapper.readTree(saved.getResponse().getContentAsString()).get("items")) {
+            if (candidate.get("orderId").asText().equals(orderId)) snapshot = candidate;
+        }
+        assertEquals("旅行杯", snapshot.get("items").get(0).get("productNameZh").asText());
     }
 
     private MockHttpSession login(String username, String password) throws Exception {

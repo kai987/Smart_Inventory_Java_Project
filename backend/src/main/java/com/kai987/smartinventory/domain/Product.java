@@ -7,11 +7,18 @@ public final class Product {
 
     private final String id;
     private final String name;
+    private final String nameJa;
+    private final String nameZh;
     private final long priceYen;
     private int stock;
     private final double weightKg;
 
     public Product(String id, String name, long priceYen, int stock, double weightKg) {
+        this(id, name, priceYen, stock, weightKg, null, null);
+    }
+
+    public Product(String id, String name, long priceYen, int stock, double weightKg,
+            String nameJa, String nameZh) {
         if (!isValidId(id)) {
             throw new IllegalArgumentException("Product ID must use the format P followed by three digits.");
         }
@@ -29,6 +36,8 @@ public final class Product {
         }
         this.id = id;
         this.name = name;
+        this.nameJa = normalizeTranslation(nameJa);
+        this.nameZh = normalizeTranslation(nameZh);
         this.priceYen = priceYen;
         this.stock = stock;
         this.weightKg = weightKg;
@@ -36,6 +45,8 @@ public final class Product {
 
     public String getId() { return id; }
     public String getName() { return name; }
+    public String getNameJa() { return nameJa; }
+    public String getNameZh() { return nameZh; }
     public long getPriceYen() { return priceYen; }
     public int getStock() { return stock; }
     public double getWeightKg() { return weightKg; }
@@ -56,22 +67,25 @@ public final class Product {
     }
 
     public Product copy() {
-        return new Product(id, name, priceYen, stock, weightKg);
+        return new Product(id, name, priceYen, stock, weightKg, nameJa, nameZh);
     }
 
     public String toCsv() {
-        return id + "," + name + "," + priceYen + "," + stock + "," + weightKg;
+        String base = id + "," + name + "," + priceYen + "," + stock + "," + weightKg;
+        return nameJa == null && nameZh == null ? base
+                : base + "," + (nameJa == null ? "" : nameJa) + "," + (nameZh == null ? "" : nameZh);
     }
 
     public static Product fromCsv(String line) {
         String[] parts = line.split(",", -1);
-        if (parts.length != 5) {
+        if (parts.length != 5 && parts.length != 7) {
             return null;
         }
         try {
             long price = new BigDecimal(parts[2].trim()).longValueExact();
             return new Product(parts[0].trim(), parts[1].trim(), price,
-                    Integer.parseInt(parts[3].trim()), Double.parseDouble(parts[4].trim()));
+                    Integer.parseInt(parts[3].trim()), Double.parseDouble(parts[4].trim()),
+                    parts.length == 7 ? parts[5] : null, parts.length == 7 ? parts[6] : null);
         } catch (ArithmeticException | IllegalArgumentException exception) {
             return null;
         }
@@ -84,6 +98,15 @@ public final class Product {
     public static boolean isValidName(String name) {
         return name != null && !name.trim().isEmpty() && name.length() <= 100
                 && !containsReservedCharacter(name);
+    }
+
+    public static String normalizeTranslation(String name) {
+        if (name == null) return null;
+        if (name.length() > 100 || containsReservedCharacter(name)) {
+            throw new IllegalArgumentException("Invalid translated product name.");
+        }
+        if (name.trim().isEmpty()) return null;
+        return name.trim();
     }
 
     public static boolean containsReservedCharacter(String text) {

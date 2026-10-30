@@ -38,7 +38,7 @@ async function openAndFillProduct(values: { id: string; price: string }) {
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Add product' }))
   await user.type(screen.getByLabelText('Product ID'), values.id)
-  await user.type(screen.getByLabelText('Name'), 'Webcam')
+  await user.type(screen.getByLabelText('English name (required)'), 'Webcam')
   await user.type(screen.getByLabelText('Price (JPY)'), values.price)
   await user.clear(screen.getByPlaceholderText('12'))
   await user.type(screen.getByPlaceholderText('12'), '12')
@@ -161,7 +161,7 @@ describe('AdminProductsPage', () => {
     await user.click(screen.getByRole('button', { name: '商品を追加' }))
     const dialog = screen.getByRole('dialog', { name: '商品を追加' })
     await user.type(within(dialog).getByLabelText('商品 ID'), created.id)
-    await user.type(within(dialog).getByLabelText('商品名'), created.name)
+    await user.type(within(dialog).getByLabelText('英語名（必須）'), created.name)
     await user.type(within(dialog).getByLabelText('価格（JPY）'), created.priceYen)
     await user.clear(within(dialog).getByLabelText('在庫'))
     await user.type(within(dialog).getByLabelText('在庫'), '28')
@@ -169,6 +169,74 @@ describe('AdminProductsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: '商品を追加' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith({
       id: 'P900', name: '私のランプ / 手工台灯', priceYen: '2600', stock: 28, weightKg: 0.3,
+    }, expect.any(AbortSignal)))
+  })
+
+  it('creates custom products with all three names and preserves drafts when language changes', async () => {
+    mockCatalog([])
+    const created = { ...customProduct, name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯' }
+    const create = vi.spyOn(productApi, 'create').mockResolvedValue(created)
+    renderWithProviders(<><LanguageSelect /><AdminProductsPage /></>, { user: { username: 'admin', role: 'ADMIN' } })
+    const user = userEvent.setup()
+    await screen.findByText('No products found')
+    await user.click(screen.getByRole('button', { name: 'Add product' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add product' })
+    await user.type(within(dialog).getByLabelText('Product ID'), 'P900')
+    await user.type(within(dialog).getByLabelText('English name (required)'), ' Ceramic Mug ')
+    await user.type(within(dialog).getByLabelText('Japanese name (optional)'), ' 陶器マグ ')
+    await user.type(within(dialog).getByLabelText('Chinese name (optional)'), ' 陶瓷马克杯 ')
+    await user.type(within(dialog).getByLabelText('Price (JPY)'), '2600')
+    await user.type(within(dialog).getByLabelText('Weight (kg)'), '0.3')
+    await user.selectOptions(screen.getByRole('combobox'), 'ja')
+    const japaneseDialog = screen.getByRole('dialog', { name: '商品を追加' })
+    expect(within(japaneseDialog).getByLabelText('日本語名（任意）')).toHaveValue(' 陶器マグ ')
+    expect(within(japaneseDialog).getByLabelText('中国語名（任意）')).toHaveValue(' 陶瓷马克杯 ')
+    await user.click(within(japaneseDialog).getByRole('button', { name: '商品を追加' }))
+    await waitFor(() => expect(create).toHaveBeenCalledWith({
+      id: 'P900', name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯', priceYen: '2600', stock: 0, weightKg: 0.3,
+    }, expect.any(AbortSignal)))
+  })
+
+  it('edits saved multilingual names without touching stock, price, or old order snapshots', async () => {
+    const translated = { ...customProduct, name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '陶瓷马克杯' }
+    mockCatalog([translated])
+    const update = vi.spyOn(productApi, 'updateNames').mockResolvedValue({ ...translated, nameZh: '手工陶瓷杯' })
+    renderWithProviders(<><LanguageSelect /><AdminProductsPage /></>, { user: { username: 'admin', role: 'ADMIN' } })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Edit names for Ceramic Mug' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit product names' })
+    expect(within(dialog).getByLabelText('Japanese name (optional)')).toHaveValue('陶器マグ')
+    await user.clear(within(dialog).getByLabelText('Chinese name (optional)'))
+    await user.type(within(dialog).getByLabelText('Chinese name (optional)'), '手工陶瓷杯')
+    await user.selectOptions(screen.getByRole('combobox'), 'zh-CN')
+    const chineseDialog = screen.getByRole('dialog', { name: '编辑商品名称' })
+    expect(within(chineseDialog).getByLabelText('中文名称（选填）')).toHaveValue('手工陶瓷杯')
+    expect(screen.getByRole('cell', { name: '陶瓷马克杯' })).toBeInTheDocument()
+    await user.click(within(chineseDialog).getByRole('button', { name: '保存名称' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('P900', {
+      name: 'Ceramic Mug', nameJa: '陶器マグ', nameZh: '手工陶瓷杯',
+    }, expect.any(AbortSignal)))
+    expect(translated).toMatchObject({ stock: 3, priceYen: '2600', nameZh: '陶瓷马克杯' })
+  })
+
+  it('validates optional translations and can clear a saved translation', async () => {
+    const translated = { ...customProduct, nameJa: '陶器マグ', nameZh: '陶瓷马克杯' }
+    mockCatalog([translated])
+    const update = vi.spyOn(productApi, 'updateNames').mockResolvedValue(customProduct)
+    renderWithProviders(<AdminProductsPage />, { user: { username: 'admin', role: 'ADMIN' } })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: `Edit names for ${customProduct.name}` }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit product names' })
+    const japanese = within(dialog).getByLabelText('Japanese name (optional)')
+    await user.clear(japanese)
+    await user.type(japanese, 'Invalid|Name')
+    await user.click(within(dialog).getByRole('button', { name: 'Save names' }))
+    expect(await within(dialog).findByText('Name contains a reserved character.')).toBeInTheDocument()
+    expect(update).not.toHaveBeenCalled()
+    await user.clear(japanese)
+    await user.click(within(dialog).getByRole('button', { name: 'Save names' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('P900', {
+      name: customProduct.name, nameJa: '', nameZh: '陶瓷马克杯',
     }, expect.any(AbortSignal)))
   })
 
