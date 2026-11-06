@@ -7,6 +7,29 @@ async function customerLogin(page: Page) {
   await expect(page).toHaveURL(/\/products$/)
 }
 
+test('an expired session redirects to login without losing the public cart', async ({ page }) => {
+  await customerLogin(page)
+  const mouse = page.getByRole('article').filter({ has: page.getByText('P002', { exact: true }) })
+  await mouse.getByRole('button', { name: 'Add to cart', exact: true }).click()
+  await expect(page.getByRole('link', { name: /Cart 1/ })).toBeVisible()
+
+  // The UI still holds the signed-in identity, but the next protected request
+  // has no valid server session, exactly as after the session has expired.
+  await page.context().clearCookies()
+  await page.getByRole('link', { name: 'My orders', exact: true }).click()
+  await expect(page).toHaveURL(/\/login\?next=%2Forders$/)
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Log out', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('article')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /Cart 1/ })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Fill Customer Demo', exact: true }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page).toHaveURL(/\/orders$/)
+  await expect(page.getByRole('heading', { name: 'My orders', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Cart 1/ })).toBeVisible()
+})
+
 test('switching customer accounts never displays the previous customer orders', async ({ page }) => {
   await customerLogin(page)
   await page.getByRole('link', { name: 'My orders' }).click()

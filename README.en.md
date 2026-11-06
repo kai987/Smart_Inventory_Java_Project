@@ -179,6 +179,8 @@ Registration passwords must contain 4–100 characters and fit within 72 UTF-8 b
 
 Customer and administrator query keys include the verified account identity. Login, logout, and confirmed session expiry cancel private requests and remove the previous account's cache. Late checkout or administrator callbacks cannot apply changes to a different account's current UI.
 
+Java, Rust, and Site return the same authentication codes: `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `FORBIDDEN`, and `USERNAME_EXISTS`. An expired-session response from a protected API sends the user back to login and clears private caches while preserving the device-local cart.
+
 The cart freezes its edit controls while an order is pending. Checkout sends an `Idempotency-Key` and retains the same key for an unchanged retry, including after a page reload. All three backends accept optional keys consisting of 16–128 ASCII letters, digits, `_`, or `-`. An accepted key is scoped to the customer and encoded into the existing persisted order ID, so replaying the same normalized item quantities returns the original order without decrementing stock again—even after a restart or product deletion. Reusing a key for different quantities returns HTTP 409 (`IDEMPOTENCY_CONFLICT`). Requests without a key retain the original create-new-order behavior.
 
 Successful checkout subtracts only the quantities in its submitted snapshot, preserving cart additions made elsewhere while the request was in flight. A lost response can be retried with the original key even if the accepted order has exhausted current stock. Local CSV backends still require one writer per data directory; idempotency does not turn CSV storage into a multi-instance database.
@@ -217,6 +219,8 @@ SMART_INVENTORY_DATA_DIR=/absolute/path/to/data \
 ```
 
 For HTTPS deployment, set `SMART_INVENTORY_SECURE_COOKIE=true` so the session cookie receives the Secure attribute.
+
+The Java backend accepts valid empty product and order CSV files on restart. Empty user files, missing or unreadable files, and malformed records still fail closed; read failures do not overwrite runtime data.
 
 ## Demo accounts
 

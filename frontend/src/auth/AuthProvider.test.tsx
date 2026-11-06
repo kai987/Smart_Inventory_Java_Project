@@ -149,6 +149,58 @@ describe('AuthProvider private query isolation', () => {
     expect(client.getQueryData(queryKeys.myOrders(customerA.username, customerA.role))).toBeUndefined()
   })
 
+  it('handles the Site wire auth contract by aborting pending work and clearing only private caches', async () => {
+    const pendingOrders = deferred<OrderList>()
+    let ordersSignal: AbortSignal | undefined
+    vi.spyOn(orderApi, 'mine').mockImplementationOnce((signal) => {
+      ordersSignal = signal
+      return pendingOrders.promise
+    })
+    const { client } = renderAuth(customerA)
+    await waitFor(() => expect(orderApi.mine).toHaveBeenCalledTimes(1))
+    const publicProducts = { items: [], total: 0 }
+    client.setQueryData(queryKeys.myOrders(customerB.username, customerB.role), { items: [order('B-cached-order', customerB)], total: 1 })
+    client.setQueryData(queryKeys.adminOrders(admin.username, ''), { items: [order('admin-cached-order', customerA)], total: 1 })
+    client.setQueryData(queryKeys.adminSummary(admin.username), { customerCount: 77 })
+    client.setQueryData(queryKeys.products({ q: '', inStockOnly: false }), publicProducts)
+    csrfStore.set({ token: csrf.token, headerName: csrf.headerName })
+
+    const originalAdapter = httpClient.defaults.adapter
+    let rejectedWriteSignal: InternalAxiosRequestConfig['signal']
+    httpClient.defaults.adapter = (config) => {
+      rejectedWriteSignal = config.signal
+      const response: AxiosResponse<unknown> = {
+        status: 401, statusText: 'Unauthorized', headers: new AxiosHeaders(), config,
+        data: { timestamp: '', status: 401, code: 'UNAUTHENTICATED', message: 'Authentication is required.', path: '/api/protected-write', fieldErrors: [] },
+      }
+      return Promise.reject(new AxiosError('Request failed with status code 401', 'ERR_BAD_REQUEST', config, undefined, response))
+    }
+    try {
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Protected write' }))
+      await waitFor(() => expect(client.getQueryData(queryKeys.auth)).toBeNull())
+      expect(screen.getByLabelText('Current account')).toHaveTextContent('anonymous')
+      expect(ordersSignal?.aborted).toBe(true)
+      expect(rejectedWriteSignal?.aborted).toBe(true)
+      expect(csrfStore.get()).toBeNull()
+      expect(client.getQueryData(queryKeys.myOrders(customerA.username, customerA.role))).toBeUndefined()
+      expect(client.getQueryData(queryKeys.myOrders(customerB.username, customerB.role))).toBeUndefined()
+      expect(client.getQueryData(queryKeys.adminOrders(admin.username, ''))).toBeUndefined()
+      expect(client.getQueryData(queryKeys.adminSummary(admin.username))).toBeUndefined()
+      expect(client.getQueryData(queryKeys.products({ q: '', inStockOnly: false }))).toEqual(publicProducts)
+
+      await act(async () => {
+        pendingOrders.resolve({ items: [order('late-private-order', customerA)], total: 1 })
+        await pendingOrders.promise
+      })
+      expect(screen.queryByText('late-private-order')).not.toBeInTheDocument()
+      expect(client.getQueryData(queryKeys.auth)).toBeNull()
+      expect(client.getQueryData(queryKeys.myOrders(customerA.username, customerA.role))).toBeUndefined()
+    } finally {
+      if (originalAdapter === undefined) delete httpClient.defaults.adapter
+      else httpClient.defaults.adapter = originalAdapter
+    }
+  })
+
   it('ignores a late protected orders 401 from an aborted old session', async () => {
     const pending = deferred<OrderList>()
     vi.spyOn(orderApi, 'mine').mockReturnValueOnce(pending.promise).mockResolvedValue({ items: [], total: 0 })

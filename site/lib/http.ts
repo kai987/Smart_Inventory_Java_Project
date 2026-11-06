@@ -136,14 +136,14 @@ export async function requireCsrf(request: Request): Promise<SessionContext> {
 export async function requireUser(request: Request, role?: Role): Promise<{ context: SessionContext; user: UserRecord }> {
   const context = await getSession(request, false);
   if (!context?.session.username) {
-    throw new ApiFault(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
+    throw new ApiFault(401, 'UNAUTHENTICATED', 'Authentication is required.');
   }
   const database = await ensureDatabase();
   const user = await database.prepare(
     'SELECT username, password_hash, role FROM users WHERE username = ?',
   ).bind(context.session.username).first<UserRecord>();
-  if (!user) throw new ApiFault(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
-  if (role && user.role !== role) throw new ApiFault(403, 'ACCESS_DENIED', 'You do not have permission to perform this action.');
+  if (!user) throw new ApiFault(401, 'UNAUTHENTICATED', 'Authentication is required.');
+  if (role && user.role !== role) throw new ApiFault(403, 'FORBIDDEN', 'You do not have permission to perform this action.');
   return { context, user };
 }
 

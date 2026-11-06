@@ -10,9 +10,15 @@ import { handleApiRequest } from './api-handler';
 
 let sqlite: DatabaseSync;
 let images: Map<string, { bytes: Uint8Array; contentType: string }>;
+let maximumBoundParameters = 0;
+let beforeBatch: (() => void) | null = null;
 class Prepared {
   constructor(readonly sql: string, readonly values: (string | number | null)[] = []) { }
-  bind(...values: (string | number | null)[]) { return new Prepared(this.sql, values); }
+  bind(...values: (string | number | null)[]) {
+    maximumBoundParameters = Math.max(maximumBoundParameters, values.length);
+    if (values.length > 100) throw new Error('D1 queries support at most 100 bound parameters.');
+    return new Prepared(this.sql, values);
+  }
   async first<T>() { return (sqlite.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
   async all<T>() { return { results: sqlite.prepare(this.sql).all(...this.values) as T[], success: true }; }
   async run() {
@@ -22,6 +28,8 @@ class Prepared {
 }
 
 beforeEach(() => {
+  maximumBoundParameters = 0;
+  beforeBatch = null;
   sqlite = new DatabaseSync(':memory:');
   sqlite.exec(`
     PRAGMA foreign_keys=ON;
@@ -53,6 +61,9 @@ beforeEach(() => {
     batch: async (statements: Prepared[]) => {
       // Exercise a lookup/commit race, then run the same all-or-nothing SQL batch as D1.
       await Promise.resolve();
+      const race = beforeBatch;
+      beforeBatch = null;
+      race?.();
       sqlite.exec('BEGIN');
       try {
         const results = [];
@@ -371,6 +382,121 @@ describe('Site administrator custom product details', () => {
     expect(await (await get('orders', 'admin-session')).json()).toEqual({ items: [original], total: 1 });
     expect((await handleApiRequest(new Request(`http://localhost${first}`))).status).toBe(200);
     expect(images.size).toBe(2);
+  });
+});
+
+describe('Site large orders under D1 parameter limits', () => {
+  const imageUrl = '/api/product-images/00000000-0000-4000-8000-000000000000.webp';
+  function seedCatalog(size: number) {
+    sqlite.exec('DELETE FROM products');
+    const insert = sqlite.prepare(`INSERT INTO products(
+      id,name,name_ja,name_zh,price_yen,stock,weight_kg,image_url
+    ) VALUES (?,?,?,?,?,?,?,?)`);
+    return Array.from({ length: size }, (_, index) => {
+      const productId = `P${String(index).padStart(3, '0')}`;
+      insert.run(productId, `Product ${productId}`, `商品 ${productId}`, `货品 ${productId}`,
+        '100', 5, 0.25, index === 0 ? imageUrl : null);
+      return { productId, quantity: 1 };
+    });
+  }
+  const savedStock = () => sqlite.prepare('SELECT id,stock FROM products ORDER BY id').all();
+  const itemCount = () => sqlite.prepare('SELECT COUNT(*) AS count FROM order_items').get()!.count;
+
+  it('makes the fake D1 enforce the production limit for every query', () => {
+    expect(() => new Prepared('SELECT 1').bind(...Array<number>(101).fill(1)))
+      .toThrow('at most 100 bound parameters');
+  });
+
+  it.each([20, 21, 24, 1000])('saves and replays %i distinct products without exceeding 100 parameters', async (size) => {
+    const items = seedCatalog(size);
+    const response = await post('orders', { items });
+    expect(response.status).toBe(201);
+    const original = await response.json() as { items: unknown[]; totalPriceYen: string; totalWeightKg: number; estimatedBoxes: number };
+    expect(original.items).toHaveLength(size);
+    expect(original.items[0]).toMatchObject({
+      productId: 'P000', productName: 'Product P000', productNameJa: '商品 P000', productNameZh: '货品 P000',
+      productImageUrl: imageUrl, quantity: 1, unitPriceYen: '100', unitWeightKg: 0.25,
+    });
+    expect(original.totalPriceYen).toBe(String(size * 100));
+    expect(original.totalWeightKg).toBe(size * 0.25);
+    expect(original.estimatedBoxes).toBe(Math.max(1, Math.ceil(size * 0.25 / 10)));
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE stock <> 4').get()!.count).toBe(0);
+    expect(itemCount()).toBe(size);
+    const afterCheckout = savedStock();
+    const replay = await post('orders', { items: [...items].reverse() });
+    expect(replay.status).toBe(201);
+    expect(await replay.json()).toEqual(original);
+    expect(savedStock()).toEqual(afterCheckout);
+    expect(count()).toBe(1);
+    expect(maximumBoundParameters).toBeLessThanOrEqual(100);
+  });
+
+  it('merges duplicate input products before the large atomic update and keyed replay', async () => {
+    const items = seedCatalog(24);
+    const firstId = items[0].productId;
+    const response = await post('orders', {
+      items: [{ productId: firstId, quantity: 1 }, ...items.slice(1), { productId: firstId, quantity: 2 }],
+    });
+    expect(response.status).toBe(201);
+    const original = await response.json() as { items: { productId: string; quantity: number }[]; totalPriceYen: string };
+    expect(original.items).toHaveLength(24);
+    expect(original.items[0]).toMatchObject({ productId: firstId, quantity: 3 });
+    expect(original.totalPriceYen).toBe('2600');
+    expect(sqlite.prepare('SELECT stock FROM products WHERE id = ?').get(firstId)!.stock).toBe(2);
+    const afterCheckout = savedStock();
+    const replay = await post('orders', { items: [{ productId: firstId, quantity: 3 }, ...items.slice(1)] });
+    expect(replay.status).toBe(201);
+    expect(await replay.json()).toEqual(original);
+    expect(savedStock()).toEqual(afterCheckout);
+    expect(count()).toBe(1);
+  });
+
+  it('atomically exhausts all 24 products when every stock exactly equals the requested quantity', async () => {
+    const items = seedCatalog(24);
+    sqlite.exec('UPDATE products SET stock = 1');
+    const response = await post('orders', { items });
+    expect(response.status).toBe(201);
+    const original = await response.json();
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE stock <> 0').get()!.count).toBe(0);
+    expect(count()).toBe(1);
+    expect(itemCount()).toBe(24);
+    const replay = await post('orders', { items });
+    expect(replay.status).toBe(201);
+    expect(await replay.json()).toEqual(original);
+    expect(count()).toBe(1);
+    expect(itemCount()).toBe(24);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE stock <> 0').get()!.count).toBe(0);
+  });
+
+  it('rolls back the entire large order if the last product runs out before the transaction', async () => {
+    const items = seedCatalog(24);
+    const lastId = items.at(-1)!.productId;
+    beforeBatch = () => { sqlite.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(lastId); };
+    const response = await post('orders', { items });
+    expect(response.status).toBe(409);
+    expect((await response.json() as ErrorResponse).code).toBe('INSUFFICIENT_STOCK');
+    expect(count()).toBe(0);
+    expect(itemCount()).toBe(0);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM operation_guards').get()!.count).toBe(0);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE id <> ? AND stock <> 5').get(lastId)!.count).toBe(0);
+    expect(sqlite.prepare('SELECT stock FROM products WHERE id = ?').get(lastId)!.stock).toBe(0);
+    // A failed attempt must not reserve its key or leave a partial item snapshot.
+    sqlite.prepare('UPDATE products SET stock = 5 WHERE id = ?').run(lastId);
+    expect((await post('orders', { items })).status).toBe(201);
+    expect(count()).toBe(1);
+    expect(itemCount()).toBe(24);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE stock <> 4').get()!.count).toBe(0);
+  });
+
+  it('commits concurrent retries of the same 24-product order only once', async () => {
+    const items = seedCatalog(24);
+    const responses = await Promise.all([post('orders', { items }), post('orders', { items })]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const orders = await Promise.all(responses.map((response) => response.json()));
+    expect(orders[0]).toEqual(orders[1]);
+    expect(count()).toBe(1);
+    expect(itemCount()).toBe(24);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM products WHERE stock <> 4').get()!.count).toBe(0);
   });
 });
 

@@ -44,5 +44,7 @@ Open `http://localhost:3000/products`. The demo credentials remain `admin / admi
 - Product, order, user, and session records use D1 rather than browser storage.
 - Order item snapshots preserve historical names, prices, weights, and quantities.
 - A guarded D1 batch makes stock deduction and order persistence all-or-nothing.
+- Product lookup and stock updates use JSON-bound item sets, keeping each statement below D1's 100-parameter limit even for large carts. Boundary, rollback, and replay tests include 20, 21, 24, and 1,000 distinct products.
+- Authentication error codes match the shared Java/Rust/frontend contract; expired protected requests return `UNAUTHENTICATED` so the UI clears private caches and returns to login without clearing the cart.
 - Optional customer-scoped `Idempotency-Key` values make order retries durable through the existing order primary key. An unchanged replay returns the saved order; changed quantities with the same key return HTTP 409 without another stock deduction.
 - Shared private query caches are account-scoped and cleared on authentication transitions. Checkout consumes only its submitted quantities and retains its key for an unchanged retry after a lost response.

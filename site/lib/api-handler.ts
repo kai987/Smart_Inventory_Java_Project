@@ -89,10 +89,10 @@ async function productById(id: string): Promise<ProductRow | null> {
 
 async function productsForOrder(items: RequestedItem[]): Promise<ProductRow[]> {
   const database = await ensureDatabase();
-  const placeholders = items.map(() => '?').join(', ');
   const result = await database.prepare(
-    `SELECT id, name, name_ja, name_zh, category, image_url, price_yen, stock, weight_kg FROM products WHERE id IN (${placeholders})`,
-  ).bind(...items.map((item) => item.productId)).all<ProductRow>();
+    `SELECT id, name, name_ja, name_zh, category, image_url, price_yen, stock, weight_kg
+     FROM products WHERE id IN (SELECT value FROM json_each(?))`,
+  ).bind(JSON.stringify(items.map((item) => item.productId))).all<ProductRow>();
   return result.results;
 }
 
@@ -174,7 +174,7 @@ async function authLogin(request: Request): Promise<Response> {
   ).bind(credentials.username).first<UserRecord>();
   if (new TextEncoder().encode(credentials.password).length > 72
     || !user || !(await compare(credentials.password, user.password_hash))) {
-    throw new ApiFault(401, 'AUTHENTICATION_FAILED', 'Invalid username or password.');
+    throw new ApiFault(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
   }
   const authenticated = await rotateAuthenticatedSession(context, user.username);
   return sessionResponse(json({ username: user.username, role: user.role }), authenticated);
@@ -189,7 +189,7 @@ async function authRegister(request: Request): Promise<Response> {
   const database = await ensureDatabase();
   const existing = await database.prepare('SELECT username FROM users WHERE username = ?')
     .bind(credentials.username).first<{ username: string }>();
-  if (existing) throw new ApiFault(409, 'USER_EXISTS', 'A user with this username already exists.');
+  if (existing) throw new ApiFault(409, 'USERNAME_EXISTS', 'A user with this username already exists.');
   const passwordHash = await hash(credentials.password, 10);
   await database.prepare('INSERT INTO users(username, password_hash, role) VALUES (?, ?, ?)')
     .bind(credentials.username, passwordHash, 'CUSTOMER').run();
@@ -321,19 +321,24 @@ async function persistOrder(customerName: string, requestedItems: RequestedItem[
   const database = await ensureDatabase();
   const orderId = keyedId ?? `O${crypto.randomUUID().replaceAll('-', '')}`;
   const guardId = crypto.randomUUID();
-  const ids = requestedItems.map((item) => item.productId);
-  const caseSql = requestedItems.map(() => 'WHEN ? THEN ?').join(' ');
-  const placeholders = requestedItems.map(() => '?').join(', ');
-  const insufficientSql = requestedItems.map(() => '(check_product.id = ? AND check_product.stock < ?)').join(' OR ');
-  const updateSql = `UPDATE products
-    SET stock = stock - CASE id ${caseSql} ELSE 0 END
-    WHERE id IN (${placeholders})
-      AND NOT EXISTS (SELECT 1 FROM products AS check_product WHERE ${insufficientSql})`;
-  const updateBindings = [
-    ...requestedItems.flatMap((item) => [item.productId, item.quantity]),
-    ...ids,
-    ...requestedItems.flatMap((item) => [item.productId, item.quantity]),
-  ];
+  // A single JSON parameter keeps both the lookup and this atomic stock update
+  // below D1's 100-bind limit, even for all 1,000 possible product IDs. The
+  // normalized input contains one row per ID; the indexed joins avoid repeated
+  // per-product scans and reject missing/insufficient products at write time.
+  const updateSql = `WITH requested AS (
+      SELECT json_extract(value, '$.productId') AS product_id,
+             json_extract(value, '$.quantity') AS quantity
+      FROM json_each(?)
+    )
+    UPDATE products AS product
+    SET stock = product.stock - requested.quantity
+    FROM requested
+    WHERE product.id = requested.product_id
+      AND NOT EXISTS (
+        SELECT 1 FROM requested AS required
+        LEFT JOIN products AS check_product ON check_product.id = required.product_id
+        WHERE check_product.id IS NULL OR check_product.stock < required.quantity
+      )`;
   const statements = [
     database.prepare(
       `INSERT INTO orders(order_id, customer_name, total_price_yen, total_weight_kg, estimated_boxes, created_at)
@@ -348,7 +353,7 @@ async function persistOrder(customerName: string, requestedItems: RequestedItem[
       orderId, index, item.productId, item.productName, item.productNameJa ?? null, item.productNameZh ?? null, item.productImageUrl ?? null, item.unitPriceYen,
       item.unitWeightKg, item.quantity, item.subtotalYen, item.totalWeightKg,
     )),
-    database.prepare(updateSql).bind(...updateBindings),
+    database.prepare(updateSql).bind(JSON.stringify(requestedItems)),
     database.prepare(
       'INSERT INTO operation_guards(id, ok) VALUES (?, CASE WHEN changes() = ? THEN 1 ELSE 0 END)',
     ).bind(guardId, requestedItems.length),

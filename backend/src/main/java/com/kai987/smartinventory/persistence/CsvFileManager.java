@@ -65,6 +65,10 @@ public class CsvFileManager {
 
     public List<User> loadUsers(PasswordEncoder encoder) {
         List<String> lines = readRequiredLines(usersFile);
+        // An empty account store is invalid; empty inventory/history stores are not.
+        if (lines.isEmpty()) {
+            throw new PersistenceException("A required user data file is empty.");
+        }
         List<User> users = new ArrayList<>();
         Set<String> usernames = new HashSet<>();
         boolean migrationNeeded = false;
@@ -169,11 +173,7 @@ public class CsvFileManager {
             if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
                 throw new PersistenceException("A required data file cannot be read.");
             }
-            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
-            if (lines.isEmpty()) {
-                throw new PersistenceException("A required data file is empty.");
-            }
-            return lines;
+            return Files.readAllLines(path, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             throw new PersistenceException("A required data file could not be loaded.", exception);
         }
