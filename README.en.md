@@ -256,6 +256,14 @@ Stop the application, then run:
 
 For safety, the script accepts no path argument and only removes the repository's non-symlink `runtime-data/` directory. On the next start, each missing CSV file is copied from the packaged seed data. Existing runtime files are never silently overwritten by seed files.
 
+## Dependency maintenance
+
+The November 7, 2026 update checks npm audit results for both the frontend and Site, including development dependencies, and applies tested repaired versions. Recheck with `npm --prefix frontend audit` and `npm --prefix site audit`. Advisory data changes over time; zero findings do not establish that the entire project is secure.
+
+The Minimatch override replaces affected versions 7 through 11.0.0 with the repaired 11.x implementation, leaving legacy Minimatch 3 callers unchanged. The Site esbuild override is limited to Drizzle's older configuration loader. These overrides exceed their parent packages' declared ranges: revalidate lint, types, builds, and `npm --prefix site run db:generate` in an isolated copy without changing the existing schema. Do not use `npm audit fix --force` to apply unrelated upgrades or downgrades.
+
+Java aligns embedded Tomcat modules on 10.1.61; Rust requires Tokio 1.53.3 or newer. Spring Boot 3.5.16 is the [last OSS release of the 3.5 generation](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/). Continuing support requires a separate 4.x migration or commercial support. This maintenance is not a comprehensive vulnerability audit of every Java/Rust dependency.
+
 ## Tests
 
 ### Complete backend and frontend check

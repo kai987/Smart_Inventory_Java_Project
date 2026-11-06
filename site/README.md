@@ -21,6 +21,8 @@ Public demo credentials allow order placement and administrator product/stock ch
 
 ## Local verification
 
+Dependency overrides are scoped: patched Minimatch 11 replaces only vulnerable 7–11.0.0 resolutions, retaining legacy Minimatch 3, and patched esbuild replaces only `@esbuild-kit/core-utils`' old config-loader dependency. Validate lint/build/type checks and run `npm run db:generate` in an isolated copy to confirm config loading without schema changes after changing these overrides. The archived loader and ESLint 9 can still emit deprecation notices; zero `npm audit` vulnerabilities is not the same as zero maintenance warnings. Do not force a framework/linter downgrade just to satisfy audit output.
+
 Use Node.js 24 and npm 11 from this directory:
 
 ```bash
