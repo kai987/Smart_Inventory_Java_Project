@@ -1,6 +1,6 @@
 package com.kai987.smartinventory.web.dto.product;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;

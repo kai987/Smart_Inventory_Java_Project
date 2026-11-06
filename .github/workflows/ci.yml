@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -25,7 +25,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
           cache: npm
@@ -51,6 +51,15 @@ jobs:
         run: |
           node scripts/check-shared-ui-parity.mjs
           node scripts/check-untranslated-ui.mjs
+
+      - name: Install Chromium for Java browser tests
+        working-directory: frontend
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Test shared frontend against Java API
+        env:
+          SMART_INVENTORY_BACKEND: java
+        run: npm --prefix frontend run test:e2e
 
       - name: Package frontend and backend as one JAR
         working-directory: backend
@@ -81,7 +90,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Rust 1.93
         uses: dtolnay/rust-toolchain@1.93.0
@@ -89,7 +98,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
           cache: npm

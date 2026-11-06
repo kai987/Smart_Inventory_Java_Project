@@ -21,12 +21,18 @@ Public demo credentials allow order placement and administrator product/stock ch
 
 ## Local verification
 
-Dependency overrides are scoped: patched Minimatch 11 replaces only vulnerable 7–11.0.0 resolutions, retaining legacy Minimatch 3, and patched esbuild replaces only `@esbuild-kit/core-utils`' old config-loader dependency. Validate lint/build/type checks and run `npm run db:generate` in an isolated copy to confirm config loading without schema changes after changing these overrides. The archived loader and ESLint 9 can still emit deprecation notices; zero `npm audit` vulnerabilities is not the same as zero maintenance warnings. Do not force a framework/linter downgrade just to satisfy audit output.
+Dependency overrides are scoped. Patched Minimatch 11 replaces only vulnerable 7–11.0.0 resolutions, retaining legacy Minimatch 3. Drizzle Kit is pinned to `0.31.11`; only its unused legacy `@esbuild-kit/esm-loader` declaration is resolved through an npm alias to the official successor, `tsx@4.23.15`. This does not make `tsx` an implementation of the old loader API and must not be generalized to other Drizzle versions. `test:tooling` fails if a published Drizzle runtime module references that legacy dependency and checks JS/TS/MJS config generation in isolated copies without changing schema or migration/journal hashes. Preserve existing migration history; do not regenerate it to make an upgrade pass.
+
+ESLint 10 uses an explicit configuration of supported plugins, without forcing unsupported peer ranges. The [rule mapping](tooling/eslint-rule-map.json) and regression fixtures track the previous React/Next.js/Hooks/TypeScript/accessibility/import checks, including conservative restrictions on class components and JSX outside TSX. `npm run lint` also runs TypeScript and fails on warnings. `npm run test:tooling` is the focused maintenance-regression command and is also included in `npm run test`.
+
+Recheck audit, tooling, lint, types, tests, and builds when dependencies change. Zero audit findings do not mean zero maintenance warnings or establish overall security. Do not force a framework/linter downgrade just to satisfy audit output.
 
 Use Node.js 24 and npm 11 from this directory:
 
 ```bash
 npx --yes npm@11.6.2 ci
+npm audit
+npm run test:tooling
 npm run test
 npm run lint
 npx tsc --noEmit --incremental false

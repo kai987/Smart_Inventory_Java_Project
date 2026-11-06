@@ -16,6 +16,8 @@ spring:
   jackson:
     deserialization:
       fail-on-unknown-properties: true
+      # Preserve field-level @Min validation for omitted/null primitive quantities.
+      fail-on-null-for-primitives: false
   mvc:
     problemdetails:
       enabled: false

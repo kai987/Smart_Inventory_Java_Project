@@ -68,8 +68,8 @@ flowchart TD
 
 | レイヤー | 技術 |
 | --- | --- |
-| バックエンド | Java 21、Spring Boot 3.5.16、Spring MVC、Spring Security、Jakarta Bean Validation、Maven Wrapper |
-| バックエンドテスト | JUnit 5、MockMvc、Spring Security Test |
+| バックエンド | Java 21、Spring Boot 4.1.2、Spring MVC、Spring Security、Jackson 3、Jakarta Bean Validation、Maven Wrapper |
+| バックエンドテスト | JUnit 6、MockMvc、Spring Security Test |
 | オプションの Rust バックエンド | Rust 1.93 以降、Axum、Tokio、bcrypt、Cargo によるテスト |
 | フロントエンド | React 19、TypeScript strict モード、Vite、React Router、TanStack Query v5、i18next |
 | フォーム・HTTP | React Hook Form、Zod、Axios |
@@ -108,7 +108,7 @@ flowchart TD
 - E2E テスト用の Playwright Chromium
 - Rust 版を使う場合のみ、Rust 1.93 以降と Cargo・rustfmt・Clippy。Rust 版のビルド・実行には Java は不要
 
-必要な Maven は Maven Wrapper が自動的にダウンロードするため、Maven のグローバルインストールは不要です。
+Maven Wrapper が SHA-256 を検証して Maven 3.9.16 を自動的にダウンロードするため、Maven のグローバルインストールは不要です。
 
 主なツールのバージョンを確認します。
 
@@ -258,11 +258,25 @@ password: user123
 
 ## 依存パッケージの保守
 
-2026年11月7日の更新では、フロントエンドと Site の npm 監査（開発用依存を含む）を確認し、互換性を検証した修正版へ更新しています。再確認には `npm --prefix frontend audit` と `npm --prefix site audit` を使ってください。監査結果は公開アドバイザリの更新によって変わるため、0件という結果はプロジェクト全体の安全性を保証するものではありません。
+依存更新時は、フロントエンドと Site の npm 監査を開発用依存も含めて確認します。監査結果は公開アドバイザリの更新によって変わるため、0件という結果はプロジェクト全体の安全性や保守警告がないことを保証するものではありません。
 
-`package.json` の Minimatch override は、影響を受ける7～11.0.0だけを修正版11へ置き換え、旧APIを使う Minimatch 3 は変更しません。Site の esbuild override は Drizzle の旧設定ローダー配下だけが対象です。これらは親パッケージの指定範囲を越えるため、更新時は Lint・型チェック・ビルドに加え、分離されたコピーで `npm --prefix site run db:generate` が既存スキーマを変更しないことも確認してください。`npm audit fix --force` による無差別な更新・ダウングレードは行いません。
+フロントエンドと Site は ESLint 10 を使用します。Site は ESLint 10 の peer 範囲をサポートするプラグインを明示的に構成し、未対応プラグインを強制インストールしません。以前の React・Next.js・Hooks・TypeScript・アクセシビリティ・import 検査の対応は [ルール対応表](site/tooling/eslint-rule-map.json) と回帰 fixture で管理します。Site の `lint` は型チェックも含み、警告も失敗として扱います。
 
-Java は Tomcat を同じ10.1系列の10.1.61にそろえ、Rust は Tokio 1.53.3以上を要求します。Spring Boot 3.5.16 は[3.5系列の最後のOSSリリース](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/)です。今後の継続的な修正提供には、別途4.xへの移行または商用サポートが必要です。今回の依存更新を、Javaを含む全依存の包括的な脆弱性監査とは扱いません。
+`package.json` の Minimatch override は、影響を受ける7～11.0.0だけを修正版11へ置き換え、旧APIを使う Minimatch 3 は変更しません。Site の Drizzle Kit は `0.31.11` に固定し、この版の実行モジュールが参照しない旧依存宣言 `@esbuild-kit/esm-loader` だけを、公式後継の `tsx@4.23.15` への npm alias で解決します。これは旧ローダー API の互換実装への置き換えではなく、他の Drizzle バージョンにも適用できる設定ではありません。参照の追加を検出すると失敗するガードと、分離した JS・TS・MJS 設定の生成テストで、既存スキーマ・マイグレーション・ジャーナルを変更しないことを確認します。
+
+```bash
+npm --prefix frontend audit
+npm --prefix site audit
+npm --prefix site run test:tooling
+```
+
+更新時は、これらに加えて Lint・型チェック・単体テスト・ビルドを再実行します。`npm audit fix --force` による無差別な更新・ダウングレードや、検証を通すための既存マイグレーション履歴の変更は行いません。
+
+Java 21 を維持し、バックエンドは [Spring Boot 4.1.2](https://spring.io/blog/2026/10/23/spring-boot-4-1-2-available-now/) を使用します。組み込み Tomcat 11 などのフレームワーク依存は Spring Boot の BOM によるバージョン管理に従い、Tomcat 10.1 への手動固定は行いません。JSON 処理は Jackson 3 を直接使用し、Jackson 2 互換モジュールは導入しません。
+
+Maven 3.9.16 への更新で旧 Guice の Unsafe 使用に関する削除予定 API 警告に対応します。Mockito は Surefire のテスト JVM にだけ `-javaagent` で起動時に読み込み、動的アタッチに依存しません。実行用 JAR の起動にエージェントは不要です。ただし JDK 24 では Jansi の native-access 警告が残る場合があり、すべての警告が解消されたという意味ではありません。
+
+この移行は機能追加ではなく、既存の `/api` JSON 契約と UTF-8 CSV 形式を維持するための依存 API 対応です。Java の `runtime-data/`、Rust の `runtime-data-rust/`、Site の D1・R2 は引き続き分離します。Rust は Tokio 1.53.3以上を要求します。今回の依存更新を、Java・Rust を含む全依存の包括的な脆弱性監査とは扱いません。
 
 ## テスト
 

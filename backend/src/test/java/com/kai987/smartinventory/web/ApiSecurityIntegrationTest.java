@@ -2,6 +2,7 @@ package com.kai987.smartinventory.web;
 
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
@@ -20,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 import org.junit.jupiter.api.MethodOrderer;
@@ -28,7 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
@@ -37,8 +39,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -56,7 +58,7 @@ class ApiSecurityIntegrationTest {
     MockMvc mockMvc;
 
     @Autowired
-    ObjectMapper objectMapper;
+    JsonMapper objectMapper;
 
     @Test
     @Order(1)
@@ -87,14 +89,29 @@ class ApiSecurityIntegrationTest {
     @Order(3)
     void validLoginCreatesSessionAndMeReturnsCurrentUser() throws Exception {
         SessionCsrf initialCsrf = csrf(null);
+        String initialSessionId = initialCsrf.session().getId();
         MvcResult loginResult = mockMvc.perform(post("/api/auth/login").session(initialCsrf.session())
                         .header(initialCsrf.header(), initialCsrf.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"customer\",\"password\":\"user123\"}"))
                 .andExpect(status().isOk()).andReturn();
         MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+        assertNotEquals(initialSessionId, session.getId());
         SessionCsrf rotatedCsrf = csrf(session);
         assertNotEquals(initialCsrf.token(), rotatedCsrf.token());
+
+        // BREACH masking alone changes the visible token. Rejecting the actual
+        // pre-login token proves the repository token was rotated as well.
+        mockMvc.perform(post("/api/orders").session(session)
+                        .header(initialCsrf.header(), initialCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"items\":[]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CSRF_INVALID"));
+        mockMvc.perform(post("/api/orders").session(session)
+                        .header(rotatedCsrf.header(), rotatedCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"items\":[]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         mockMvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isOk())
@@ -397,6 +414,138 @@ class ApiSecurityIntegrationTest {
         assertPasswordByteLimitAtLogin("password_utf8", "中".repeat(24), "中".repeat(25));
     }
 
+    @Test
+    @Order(18)
+    void missingNullAndNonPositiveQuantitiesKeepFieldValidationErrorsWithoutMutation() throws Exception {
+        MockHttpSession session = login("customer", "user123");
+        SessionCsrf csrf = csrf(session);
+        String productsBefore = Files.readString(dataDirectory.resolve("products.csv"));
+        String ordersBefore = Files.readString(dataDirectory.resolve("orders.csv"));
+        for (String item : List.of("{\"productId\":\"P002\"}",
+                "{\"productId\":\"P002\",\"quantity\":null}",
+                "{\"productId\":\"P002\",\"quantity\":0}",
+                "{\"productId\":\"P002\",\"quantity\":-1}")) {
+            mockMvc.perform(post("/api/orders").session(session)
+                            .header(csrf.header(), csrf.token())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"items\":[" + item + "]}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("items[0].quantity")));
+        }
+        assertEquals(productsBefore, Files.readString(dataDirectory.resolve("products.csv")));
+        assertEquals(ordersBefore, Files.readString(dataDirectory.resolve("orders.csv")));
+    }
+
+    @Test
+    @Order(19)
+    void unknownNestedOrderAndProductPropertiesAreRejectedWithoutMutation() throws Exception {
+        MockHttpSession customer = login("customer", "user123");
+        SessionCsrf customerCsrf = csrf(customer);
+        String productsBefore = Files.readString(dataDirectory.resolve("products.csv"));
+        String ordersBefore = Files.readString(dataDirectory.resolve("orders.csv"));
+        mockMvc.perform(post("/api/orders").session(customer)
+                        .header(customerCsrf.header(), customerCsrf.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":1,\"unitPriceYen\":\"1\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        MockHttpSession admin = login("admin", "admin123");
+        SessionCsrf adminCsrf = csrf(admin);
+        mockMvc.perform(post("/api/products").session(admin)
+                        .header(adminCsrf.header(), adminCsrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":\"P897\",\"name\":\"Unknown field\",\"priceYen\":\"100\",\"stock\":1,\"weightKg\":1,\"unexpected\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        assertEquals(productsBefore, Files.readString(dataDirectory.resolve("products.csv")));
+        assertEquals(ordersBefore, Files.readString(dataDirectory.resolve("orders.csv")));
+    }
+
+    @Test
+    @Order(20)
+    void customTextDeserializersRejectObjectsAndArraysOnRecordsAndMutableDetails() throws Exception {
+        MockHttpSession admin = login("admin", "admin123");
+        SessionCsrf csrf = csrf(admin);
+        String productsBefore = Files.readString(dataDirectory.resolve("products.csv"));
+        for (String invalid : List.of("{}", "[]")) {
+            mockMvc.perform(post("/api/products").session(admin)
+                            .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"id\":\"P897\",\"name\":" + invalid + ",\"priceYen\":\"100\",\"stock\":1,\"weightKg\":1}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+            mockMvc.perform(patch("/api/products/P002/names").session(admin)
+                            .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"Mouse\",\"nameZh\":" + invalid + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+            mockMvc.perform(patch("/api/products/P002/details").session(admin)
+                            .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"Mouse\",\"category\":\"electronics\",\"imageUrl\":" + invalid + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        assertEquals(productsBefore, Files.readString(dataDirectory.resolve("products.csv")));
+    }
+
+    @Test
+    @Order(21)
+    void filterAndMvcErrorsKeepTheSameJsonEnvelopeAndIsoTimestamp() throws Exception {
+        assertErrorEnvelope(mockMvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized())
+                .andReturn(), 401, "UNAUTHENTICATED", "/api/auth/me");
+        assertErrorEnvelope(mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden()).andReturn(), 403, "CSRF_INVALID", "/api/auth/login");
+        SessionCsrf csrf = csrf(null);
+        assertErrorEnvelope(mockMvc.perform(post("/api/auth/login").session(csrf.session())
+                        .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":"))
+                .andExpect(status().isBadRequest()).andReturn(), 400, "VALIDATION_ERROR", "/api/auth/login");
+    }
+
+    @Test
+    @Order(22)
+    void trailingJsonValuesAreRejectedBeforeCreatingAnOrder() throws Exception {
+        MockHttpSession customer = login("customer", "user123");
+        SessionCsrf csrf = csrf(customer);
+        String productsBefore = Files.readString(dataDirectory.resolve("products.csv"));
+        String ordersBefore = Files.readString(dataDirectory.resolve("orders.csv"));
+        for (String trailingValue : List.of("{}", "true")) {
+            mockMvc.perform(post("/api/orders").session(customer)
+                            .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"items\":[{\"productId\":\"P002\",\"quantity\":1}]} " + trailingValue))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        assertEquals(productsBefore, Files.readString(dataDirectory.resolve("products.csv")));
+        assertEquals(ordersBefore, Files.readString(dataDirectory.resolve("orders.csv")));
+    }
+
+    @Test
+    @Order(23)
+    void registrationRejectsPasswordsOver72Utf8BytesWithoutPersistingUsers() throws Exception {
+        SessionCsrf csrf = csrf(null);
+        String usersBefore = Files.readString(dataDirectory.resolve("users.csv"));
+        for (String password : List.of("a".repeat(73), "中".repeat(25))) {
+            mockMvc.perform(post("/api/auth/register").session(csrf.session())
+                            .header(csrf.header(), csrf.token()).contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new LoginBody("too_long_password", password))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        assertEquals(usersBefore, Files.readString(dataDirectory.resolve("users.csv")));
+    }
+
+    private void assertErrorEnvelope(MvcResult result, int status, String code, String path) throws Exception {
+        assertEquals(MediaType.APPLICATION_JSON_VALUE, result.getResponse().getContentType().split(";")[0]);
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertEquals(status, body.get("status").asInt());
+        assertEquals(code, body.get("code").asString());
+        assertEquals(path, body.get("path").asString());
+        assertFalse(body.get("message").asString().isBlank());
+        org.junit.jupiter.api.Assertions.assertTrue(body.get("fieldErrors").isArray());
+        org.junit.jupiter.api.Assertions.assertTrue(body.get("timestamp").isString());
+        Instant.parse(body.get("timestamp").asString());
+    }
+
     private void assertPasswordByteLimitAtLogin(String username, String validPassword,
             String tooLongPassword) throws Exception {
         SessionCsrf registrationCsrf = csrf(null);
@@ -444,7 +593,7 @@ class ApiSecurityIntegrationTest {
                         .header(customerCsrf.header(), customerCsrf.token()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"items\":[{\"productId\":\"P900\",\"quantity\":1}]}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.items[0].productNameZh").value("旅行杯")).andReturn();
-        String orderId = objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asText();
+        String orderId = objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asString();
         mockMvc.perform(patch(path).session(admin).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"New Cup\"}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CSRF_INVALID"));
         for (String invalidName : List.of("123", "true")) {
@@ -474,9 +623,9 @@ class ApiSecurityIntegrationTest {
         MvcResult saved = mockMvc.perform(get("/api/orders/me").session(customer)).andExpect(status().isOk()).andReturn();
         JsonNode snapshot = null;
         for (JsonNode candidate : objectMapper.readTree(saved.getResponse().getContentAsString()).get("items")) {
-            if (candidate.get("orderId").asText().equals(orderId)) snapshot = candidate;
+            if (candidate.get("orderId").asString().equals(orderId)) snapshot = candidate;
         }
-        assertEquals("旅行杯", snapshot.get("items").get(0).get("productNameZh").asText());
+        assertEquals("旅行杯", snapshot.get("items").get(0).get("productNameZh").asString());
     }
 
     private MockHttpSession login(String username, String password) throws Exception {
@@ -512,7 +661,7 @@ class ApiSecurityIntegrationTest {
         assertFalse(Files.exists(dataDirectory.resolve("uploads")));
         MvcResult upload=mockMvc.perform(post("/api/product-images").session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType("image/png").content(png))
                 .andExpect(status().isCreated()).andReturn();
-        String url=objectMapper.readTree(upload.getResponse().getContentAsString()).get("imageUrl").asText();
+        String url=objectMapper.readTree(upload.getResponse().getContentAsString()).get("imageUrl").asString();
         mockMvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().bytes(png))
                 .andExpect(content().contentType("image/png")).andExpect(header().string("Cache-Control","public, max-age=31536000, immutable"))
                 .andExpect(header().string("X-Content-Type-Options","nosniff")).andExpect(header().string("Content-Security-Policy","default-src 'none'; sandbox"));
@@ -529,7 +678,7 @@ class ApiSecurityIntegrationTest {
         MvcResult placed=mockMvc.perform(post("/api/orders").session(customer).header(customerCsrf.header(),customerCsrf.token()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"items\":[{\"productId\":\"P901\",\"quantity\":1}]}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.items[0].productImageUrl").value(url)).andReturn();
-        String orderId=objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asText();
+        String orderId=objectMapper.readTree(placed.getResponse().getContentAsString()).get("orderId").asString();
         for (String invalid: List.of("{\"name\":\"Bad\",\"category\":\"invalid\"}","{\"name\":\"Bad\",\"category\":17}",
                 "{\"name\":\"Bad\",\"category\":\"home\",\"imageUrl\":17}","{\"name\":\"Bad\",\"category\":\"home\",\"imageUrl\":\"https://example.com/image.png\"}","{\"name\":\"Bad\"}")) {
             mockMvc.perform(patch(path).session(admin).header(adminCsrf.header(),adminCsrf.token()).contentType(MediaType.APPLICATION_JSON).content(invalid))
@@ -542,7 +691,7 @@ class ApiSecurityIntegrationTest {
         mockMvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().bytes(png));
         MvcResult saved=mockMvc.perform(get("/api/orders/me").session(customer)).andExpect(status().isOk()).andReturn();
         for (JsonNode candidate: objectMapper.readTree(saved.getResponse().getContentAsString()).get("items")) {
-            if (candidate.get("orderId").asText().equals(orderId)) assertEquals(url,candidate.get("items").get(0).get("productImageUrl").asText());
+            if (candidate.get("orderId").asString().equals(orderId)) assertEquals(url,candidate.get("items").get(0).get("productImageUrl").asString());
         }
     }
 
@@ -554,7 +703,7 @@ class ApiSecurityIntegrationTest {
         MvcResult result = mockMvc.perform(request).andExpect(status().isOk()).andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return new SessionCsrf((MockHttpSession) result.getRequest().getSession(false),
-                body.get("headerName").asText(), body.get("token").asText());
+                body.get("headerName").asString(), body.get("token").asString());
     }
 
     private int productStock(String id) throws Exception {

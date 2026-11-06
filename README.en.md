@@ -68,8 +68,8 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 
 | Layer | Technology |
 | --- | --- |
-| Backend | Java 21, Spring Boot 3.5.16, Spring MVC, Spring Security, Jakarta Bean Validation, Maven Wrapper |
-| Backend tests | JUnit 5, MockMvc, Spring Security Test |
+| Backend | Java 21, Spring Boot 4.1.2, Spring MVC, Spring Security, Jackson 3, Jakarta Bean Validation, Maven Wrapper |
+| Backend tests | JUnit 6, MockMvc, Spring Security Test |
 | Optional Rust backend | Rust 1.93+, Axum, Tokio, bcrypt, native Cargo tests |
 | Frontend | React 19, TypeScript strict mode, Vite, React Router, TanStack Query v5, i18next |
 | Forms and HTTP | React Hook Form, Zod, Axios |
@@ -108,7 +108,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 - A Chromium-compatible Playwright browser for E2E tests
 - Rust 1.93 or newer with Cargo, rustfmt, and Clippy only when using the Rust backend; Java is not required for the Rust workflow
 
-The Maven Wrapper downloads the required Maven distribution automatically. A global Maven installation is not required.
+The Maven Wrapper downloads Maven 3.9.16 automatically and verifies its SHA-256 checksum. A global Maven installation is not required.
 
 Confirm the main tool versions with:
 
@@ -258,11 +258,25 @@ For safety, the script accepts no path argument and only removes the repository'
 
 ## Dependency maintenance
 
-The November 7, 2026 update checks npm audit results for both the frontend and Site, including development dependencies, and applies tested repaired versions. Recheck with `npm --prefix frontend audit` and `npm --prefix site audit`. Advisory data changes over time; zero findings do not establish that the entire project is secure.
+When updating dependencies, check npm audit results for both the frontend and Site, including development dependencies. Advisory data changes over time; zero findings do not establish that the entire project is secure or free of maintenance warnings.
 
-The Minimatch override replaces affected versions 7 through 11.0.0 with the repaired 11.x implementation, leaving legacy Minimatch 3 callers unchanged. The Site esbuild override is limited to Drizzle's older configuration loader. These overrides exceed their parent packages' declared ranges: revalidate lint, types, builds, and `npm --prefix site run db:generate` in an isolated copy without changing the existing schema. Do not use `npm audit fix --force` to apply unrelated upgrades or downgrades.
+Both the frontend and Site use ESLint 10. The Site explicitly configures plugins with supported ESLint 10 peer ranges instead of force-installing unsupported plugins. A [rule mapping](site/tooling/eslint-rule-map.json) and regression fixtures track the previous React, Next.js, Hooks, TypeScript, accessibility, and import checks. Its `lint` command includes type checking and treats warnings as failures.
 
-Java aligns embedded Tomcat modules on 10.1.61; Rust requires Tokio 1.53.3 or newer. Spring Boot 3.5.16 is the [last OSS release of the 3.5 generation](https://spring.io/blog/2026/06/25/spring-boot-3-5-16-available-now/). Continuing support requires a separate 4.x migration or commercial support. This maintenance is not a comprehensive vulnerability audit of every Java/Rust dependency.
+The Minimatch override replaces affected versions 7 through 11.0.0 with the repaired 11.x implementation, leaving legacy Minimatch 3 callers unchanged. The Site pins Drizzle Kit to `0.31.11` and resolves only its unused legacy `@esbuild-kit/esm-loader` dependency declaration through an npm alias to its official successor, `tsx@4.23.15`. This is not an implementation of the old loader API and must not be generalized to other Drizzle versions. A fail-closed reference guard and isolated JS/TS/MJS configuration-generation tests check that the existing schema, migrations, and journal remain unchanged.
+
+```bash
+npm --prefix frontend audit
+npm --prefix site audit
+npm --prefix site run test:tooling
+```
+
+Also rerun lint, type checks, unit tests, and builds after updates. Do not use `npm audit fix --force` for unrelated upgrades/downgrades or rewrite existing migration history to make checks pass.
+
+The backend retains Java 21 and uses [Spring Boot 4.1.2](https://spring.io/blog/2026/10/23/spring-boot-4-1-2-available-now/). Framework dependencies, including embedded Tomcat 11, follow Spring Boot's BOM-managed versions; Tomcat is not manually pinned to the 10.1 line. JSON handling uses Jackson 3 directly, without a Jackson 2 compatibility module.
+
+Maven 3.9.16 addresses the old Guice terminal-deprecation warning for Unsafe usage. Mockito is loaded at startup with `-javaagent` only in Surefire's test JVM, avoiding dynamic attachment; the runnable application JAR needs no agent. JDK 24 may still emit Jansi native-access warnings, so this does not mean that every warning has been eliminated.
+
+This migration adapts dependency APIs, adds no new application features, and preserves the existing `/api` JSON contract and UTF-8 CSV format. Java's `runtime-data/`, Rust's `runtime-data-rust/`, and the Site's D1/R2 storage remain separate. Rust requires Tokio 1.53.3 or newer. This maintenance is not a comprehensive vulnerability audit of every Java/Rust dependency.
 
 ## Tests
 

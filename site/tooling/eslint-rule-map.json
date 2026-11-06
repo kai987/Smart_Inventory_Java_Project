@@ -1,0 +1,51 @@
+{
+  "baseline": "eslint-config-next 16.4.3 core-web-vitals + typescript; effective rules for current TSX sources",
+  "policy": [
+    "ESLint 10.14.0 and every installed plugin have compatible peer ranges. No force or legacy-peer-deps is used.",
+    "npm run lint includes tsc --noEmit --incremental false. All JSX must live in TSX; JSX in JS/JSX/MJS/CJS is rejected. checkJs remains false, so TypeScript is not claimed to validate ordinary JavaScript.",
+    "React class components and external create-react-class factories are conservatively rejected. The current application uses function components; no application code changed.",
+    "Both warnings and errors fail the lint gate because --max-warnings is zero.",
+    "The maintained import-x package exposes a supported rule subpath. Only the previously enabled no-anonymous-default-export rule is imported; unrelated glob rules with an incompatible minimatch makeRe API are not loaded."
+  ],
+  "unchanged": {
+    "@next/next": "All recommended + core-web-vitals rules from @next/eslint-plugin-next 16.4.3, with the existing native-image exception for the two product-image components.",
+    "react-hooks": "All recommended rules from eslint-plugin-react-hooks 7.1.1, unchanged from the resolved baseline.",
+    "@typescript-eslint": "All recommended rules from typescript-eslint 8.67.0; no-unused-vars and no-unused-expressions remain warnings, all other previous severities retained.",
+    "core": ["no-var", "prefer-const", "prefer-rest-params", "prefer-spread"],
+    "jsx-a11y": ["alt-text", "aria-props", "aria-proptypes", "aria-unsupported-elements", "role-has-required-aria-props", "role-supports-aria-props"]
+  },
+  "replacements": {
+    "import/no-anonymous-default-export": ["import-x/no-anonymous-default-export"],
+    "react/display-name": ["@eslint-react/no-missing-component-display-name", "import-x/no-anonymous-default-export"],
+    "react/jsx-key": ["@eslint-react/no-missing-key", "@eslint-react/no-duplicate-key"],
+    "react/jsx-no-comment-textnodes": ["@eslint-react/jsx-no-comment-textnodes"],
+    "react/jsx-no-duplicate-props": ["typescript:TS17001", "no-restricted-syntax:JSX-in-JavaScript"],
+    "react/jsx-no-undef": ["typescript:TS2304", "no-restricted-syntax:JSX-in-JavaScript"],
+    "react/jsx-uses-react": ["ESLint10:native-JSX-reference-tracking", "typescript:automatic-react-jsx-runtime"],
+    "react/jsx-uses-vars": ["ESLint10:native-JSX-reference-tracking", "@typescript-eslint/no-unused-vars"],
+    "react/no-children-prop": ["@eslint-react/jsx-no-children-prop"],
+    "react/no-danger-with-children": ["@eslint-react/dom-no-dangerously-set-innerhtml-with-children"],
+    "react/no-deprecated": ["@eslint-react/no-class-component", "@eslint-react/no-component-will-mount", "@eslint-react/no-component-will-receive-props", "@eslint-react/no-component-will-update", "@eslint-react/dom-no-render", "@eslint-react/dom-no-hydrate", "@eslint-react/dom-no-find-dom-node", "no-restricted-properties", "no-restricted-imports", "no-restricted-syntax:deprecated-API-destructuring"],
+    "react/no-direct-mutation-state": ["@eslint-react/no-direct-mutation-state", "@eslint-react/no-class-component"],
+    "react/no-find-dom-node": ["@eslint-react/dom-no-find-dom-node"],
+    "react/no-is-mounted": ["@eslint-react/no-class-component"],
+    "react/no-render-return-value": ["@eslint-react/dom-no-render-return-value", "@eslint-react/dom-no-render"],
+    "react/no-string-refs": ["no-restricted-syntax:literal-ref", "@eslint-react/no-class-component", "typescript:ref-prop-type"],
+    "react/no-unescaped-entities": ["no-restricted-syntax:unescaped-JSXText"],
+    "react/require-render-return": ["@eslint-react/no-class-component"]
+  },
+  "deprecatedApis": [
+    { "module": "react", "object": "React", "properties": ["renderComponent", "renderComponentToString", "renderComponentToStaticMarkup", "isValidComponent", "isValidClass", "render", "unmountComponentAtNode", "findDOMNode", "renderToString", "renderToStaticMarkup", "createClass", "createFactory", "PropTypes", "addons", "DOM"] },
+    { "module": "react-dom", "object": "ReactDOM", "properties": ["render", "hydrate", "unmountComponentAtNode", "findDOMNode"] },
+    { "module": "react-dom/server", "object": "ReactDOMServer", "properties": ["renderToNodeStream"] },
+    { "module": "react-addons-perf", "object": "ReactPerf", "properties": ["printDOM", "getMeasurementsSummaryMap"] },
+    { "module": "react-addons-perf", "object": "Perf", "properties": ["printDOM", "getMeasurementsSummaryMap"] }
+  ],
+  "deprecationNotes": "All top-level APIs from the old no-deprecated rule are retained. Entire removed React.addons/PropTypes namespaces and all class components are conservatively rejected, covering their old nested/lifecycle checks. React.createFactory is also rejected for React 19. transferPropsTo is rejected on every object. Context.displayName was not enabled by the old display-name rule and is not newly required.",
+  "sources": [
+    "https://eslint.org/blog/2026/10/eslint-v10.14.0-released/",
+    "https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react",
+    "https://github.com/un-ts/eslint-plugin-import-x",
+    "https://github.com/es-tooling/eslint-plugin-jsx-a11y-x"
+  ]
+}
