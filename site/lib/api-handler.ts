@@ -76,10 +76,6 @@ function sessionResponse(response: Response, context: SessionContext): Response 
   return withSession(response, context);
 }
 
-function escapedLike(value: string): string {
-  return `%${value.replace(/[\\%_]/g, '\\$&').toLowerCase()}%`;
-}
-
 async function productById(id: string): Promise<ProductRow | null> {
   const database = await ensureDatabase();
   return database.prepare(
@@ -212,9 +208,11 @@ async function listProducts(request: Request): Promise<Response> {
   const conditions: string[] = [];
   const bindings: unknown[] = [];
   if (query !== '') {
-    conditions.push("(LOWER(id) LIKE ? ESCAPE '\\' OR LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(name_ja, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(name_zh, '')) LIKE ? ESCAPE '\\')");
-    const pattern = escapedLike(query);
-    bindings.push(pattern, pattern, pattern, pattern);
+    // Literal substring matching avoids D1's 50-byte LIKE-pattern limit.
+    // Keep the complete keyword, including multibyte text and %/_/\\ symbols.
+    conditions.push("(instr(LOWER(id), ?) > 0 OR instr(LOWER(name), ?) > 0 OR instr(LOWER(COALESCE(name_ja, '')), ?) > 0 OR instr(LOWER(COALESCE(name_zh, '')), ?) > 0)");
+    const keyword = query.toLowerCase();
+    bindings.push(keyword, keyword, keyword, keyword);
   }
   if (inStockOnly) conditions.push('stock > 0');
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -437,7 +435,7 @@ async function allOrders(request: Request): Promise<Response> {
   const customer = new URL(request.url).searchParams.get('customer')?.trim() ?? '';
   const response = customer === ''
     ? await ordersResponse()
-    : await ordersResponse("WHERE LOWER(customer_name) LIKE ? ESCAPE '\\'", [escapedLike(customer)]);
+    : await ordersResponse('WHERE instr(LOWER(customer_name), ?) > 0', [customer.toLowerCase()]);
   return sessionResponse(json(response), context);
 }
 

@@ -9,7 +9,7 @@ import { toApiError } from '../api/apiError'
 import { queryKeys } from '../app/queryClient'
 import { useAuth } from '../auth/AuthProvider'
 import { useCart } from '../cart/CartProvider'
-import { completeCheckoutIntent, getCheckoutKey, getPendingCheckoutKey } from '../cart/checkoutIntent'
+import { completeCheckoutIntent, getCheckoutKey, getPendingCheckoutKey, getRestorableCheckoutItems } from '../cart/checkoutIntent'
 import type { CartItem } from '../cart/cartTypes'
 import type { User } from '../api/types'
 import { EmptyState, ErrorState, SkeletonRows } from '../components/feedback/QueryFeedback'
@@ -42,7 +42,7 @@ export function CartPage() {
   const productName = useProductNames()
   const { formatYen, formatNumber, formatWeight } = useLocaleFormatters()
   const { state, dispatch, consumeOrder } = useCart()
-  const { user, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
+  const { user, isLoading: isAuthLoading, isChangingSession, getSessionVersion, getSessionSignal, isCurrentSession, runProtectedRequest } = useAuth()
   const submitting = useRef(false)
   const { showToast } = useToast()
   const navigate = useNavigate()
@@ -63,9 +63,9 @@ export function CartPage() {
   )
 
   useEffect(() => {
-    if (submitting.current) return
+    if (submitting.current || isAuthLoading || isChangingSession) return
     // A lost response may already have reduced stock. Keep its payload intact for replay.
-    if (user !== null && getPendingCheckoutKey(user.username, state.items) !== null) return
+    if (user !== null && getRestorableCheckoutItems(user.username) !== null) return
     if (products.data === undefined) return
     for (const item of state.items) {
       const product = productMap.get(item.productId)
@@ -74,7 +74,7 @@ export function CartPage() {
         showToast(<ProductToastMessage kind="stockAdjusted" productId={product.id} originalName={product.name} nameJa={product.nameJa} nameZh={product.nameZh} stock={product.stock} />, 'info')
       }
     }
-  }, [dispatch, productMap, products.data, showToast, state.items, user])
+  }, [dispatch, isAuthLoading, isChangingSession, productMap, products.data, showToast, state.items, user])
 
   const resolvedItems = state.items.map((cartItem) => ({ cartItem, product: productMap.get(cartItem.productId) }))
   const hasUnavailable = resolvedItems.some(({ product }) => product === undefined || product.stock === 0)
@@ -122,7 +122,9 @@ export function CartPage() {
     mutationFn: (submission: CheckoutSubmission) => runProtectedRequest(() => orderApi.create({ items: submission.items }, submission.idempotencyKey, submission.signal)),
     onSuccess: async (order, submission) => {
       if (!isCurrentSession(submission.user, submission.sessionVersion)) return
-      if (!consumeOrder(`${submission.user.username}:${order.orderId}`, submission.items)) return
+      const consumed = await consumeOrder(`${submission.user.username}:${order.orderId}`, submission.items,
+        () => isCurrentSession(submission.user, submission.sessionVersion))
+      if (!isCurrentSession(submission.user, submission.sessionVersion)) return
       completeCheckoutIntent(submission.user.username, submission.idempotencyKey)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.productsRoot }),
@@ -131,7 +133,7 @@ export function CartPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.adminSummaryRoot }),
       ])
       if (!isCurrentSession(submission.user, submission.sessionVersion)) return
-      showToast(t('cart.orderSuccess'), 'success')
+      if (consumed) showToast(t('cart.orderSuccess'), 'success')
       void navigate('/orders')
     },
     onError: (error, submission) => {

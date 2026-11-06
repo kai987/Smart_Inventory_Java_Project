@@ -1,9 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { renderWithProviders } from '../test/render'
+import { useState } from 'react'
+import { authValue, renderWithProviders } from '../test/render'
+import { AuthContext } from '../auth/AuthProvider'
 import { CartProvider, useCart } from './CartProvider'
-import { CART_STORAGE_KEY } from './cartTypes'
+import { CART_STORAGE_KEY, SHARED_CART_STORAGE_KEY } from './cartTypes'
+import { getCheckoutKey, getPendingCheckoutKey, getRestorableCheckoutItems } from './checkoutIntent'
 
 function Probe() {
   const { state, dispatch, consumeOrder } = useCart()
@@ -17,6 +20,25 @@ function Probe() {
 }
 
 describe('CartProvider', () => {
+  it('keeps an explicit pre-auth cart removal when the authenticated username resolves later', async () => {
+    const items = [{ productId: 'P001', quantity: 1 }]
+    const key = getCheckoutKey('preauth-customer', items)
+    localStorage.setItem(SHARED_CART_STORAGE_KEY, JSON.stringify({ version: 2, revision: 0, items, consumedOrders: [] }))
+    function AsyncSession() {
+      const [ready, setReady] = useState(false)
+      return <AuthContext value={ready ? authValue({ username: 'preauth-customer', role: 'CUSTOMER' }) : authValue(null, { isLoading: true })}>
+        <button onClick={() => setReady(true)}>Finish authentication</button>
+        <CartProvider><Probe /></CartProvider>
+      </AuthContext>
+    }
+    renderWithProviders(<AsyncSession />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Remove item' }))
+    await user.click(screen.getByRole('button', { name: 'Finish authentication' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('0'))
+    expect(getRestorableCheckoutItems('preauth-customer')).toBeNull()
+    expect(getPendingCheckoutKey('preauth-customer', items)).toBe(key)
+  })
   it('consumes a completed order once, retaining items added before a duplicate response', async () => {
     window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ version: 1, items: [{ productId: 'P001', quantity: 2 }] }))
     renderWithProviders(<Probe />)
@@ -46,7 +68,8 @@ describe('CartProvider', () => {
       await user.click(screen.getByRole('button', { name: 'Remove item' }))
       expect(screen.getByRole('status')).toHaveTextContent('0')
       expect(getItem).toHaveBeenCalled()
-      expect(setItem).toHaveBeenCalledTimes(4)
+      // Unreadable persistence is not overwritten; subsequent operations stay in memory.
+      expect(setItem).not.toHaveBeenCalled()
     } finally {
       view.unmount()
       getItem.mockRestore()

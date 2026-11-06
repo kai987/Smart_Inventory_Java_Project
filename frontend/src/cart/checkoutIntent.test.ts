@@ -29,6 +29,18 @@ describe('checkout intent', () => {
     window.sessionStorage.setItem('smart-inventory-checkout:v1:customer', JSON.stringify({ key, fingerprint }))
     expect(checkout.getPendingCheckoutKey('customer', items)).toBe(key)
     expect(checkout.getCheckoutKey('customer', items)).toBe(key)
+    expect(checkout.getPendingCheckoutItems('customer')).toEqual(items)
+  })
+
+  it.each([
+    '{broken',
+    JSON.stringify([{ productId: 'P001', quantity: 0 }]),
+    JSON.stringify([{ productId: 'P001', quantity: Number.MAX_SAFE_INTEGER + 1 }]),
+    JSON.stringify([{ productId: 'P001', quantity: 1 }, { productId: 'P001', quantity: 1 }]),
+    JSON.stringify([...items].reverse()),
+  ])('does not restore malformed or noncanonical pending items (%s)', (fingerprint) => {
+    sessionStorage.setItem('smart-inventory-checkout:v1:customer', JSON.stringify({ key: 'persisted-key-12345678', fingerprint }))
+    expect(checkout.getPendingCheckoutItems('customer')).toBeNull()
   })
 
   it('clears a completed intent but does not discard a newer pending attempt', () => {
@@ -38,6 +50,34 @@ describe('checkout intent', () => {
     expect(checkout.getCheckoutKey('customer', [{ productId: 'P001', quantity: 3 }])).toBe(updated)
     checkout.completeCheckoutIntent('customer', updated)
     expect(checkout.getCheckoutKey('customer', [{ productId: 'P001', quantity: 3 }])).not.toBe(updated)
+  })
+
+  it('keeps an uncertain key but does not restore a cart explicitly changed in this tab after reload', async () => {
+    const key = checkout.getCheckoutKey('customer', items)
+    checkout.noteCheckoutCartEdited('customer', [])
+    expect(checkout.getRestorableCheckoutItems('customer')).toBeNull()
+    expect(checkout.getPendingCheckoutKey('customer', items)).toBe(key)
+    vi.resetModules()
+    const reloaded = await import('./checkoutIntent')
+    expect(reloaded.getRestorableCheckoutItems('customer')).toBeNull()
+    expect(reloaded.getPendingCheckoutKey('customer', items)).toBe(key)
+    reloaded.noteCheckoutCartEdited('customer', items)
+    expect(reloaded.getRestorableCheckoutItems('customer')).toEqual(items)
+    expect(reloaded.getCheckoutKey('customer', items)).toBe(key)
+  })
+
+  it('changes only the current account intent and retains other account metadata unchanged', async () => {
+    const key = checkout.getCheckoutKey('customer', items)
+    const otherKey = checkout.getCheckoutKey('another-customer', items)
+    const otherRaw = sessionStorage.getItem('smart-inventory-checkout:v1:another-customer')
+    checkout.noteCheckoutCartEdited('customer', [])
+    expect(sessionStorage.getItem('smart-inventory-checkout:v1:another-customer')).toBe(otherRaw)
+    vi.resetModules()
+    const reloaded = await import('./checkoutIntent')
+    expect(reloaded.getRestorableCheckoutItems('customer')).toBeNull()
+    expect(reloaded.getPendingCheckoutKey('customer', items)).toBe(key)
+    expect(reloaded.getRestorableCheckoutItems('another-customer')).toEqual(items)
+    expect(reloaded.getPendingCheckoutKey('another-customer', items)).toBe(otherKey)
   })
 
   it('retains a retry key when writes fail but sessionStorage reads return null', () => {

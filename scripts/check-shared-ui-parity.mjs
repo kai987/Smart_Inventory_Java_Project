@@ -17,6 +17,7 @@ const explicitSharedPaths = [
   'cart/cartReducer.ts',
   'cart/cartTypes.ts',
   'cart/cartStorage.ts',
+  'cart/cartSync.ts',
   'cart/CartProvider.tsx',
   'cart/checkoutIntent.ts',
   'auth/RequireAuth.tsx',

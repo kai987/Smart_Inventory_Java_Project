@@ -151,7 +151,9 @@ test('a real checkout timeout keeps its key in memory when sessionStorage writes
     expect(keys).toHaveLength(1)
     expect(keys[0]).toMatch(/^[A-Za-z0-9_-]{16,128}$/)
     expect(await page.evaluate(() => globalThis.sessionStorage.getItem('smart-inventory-checkout:v1:customer'))).toBeNull()
-    expect(await page.evaluate(() => globalThis.localStorage.getItem('smart-inventory-cart:v1'))).not.toBeNull()
+    const storedCart = await page.evaluate(() => globalThis.localStorage.getItem('smart-inventory-cart:v2'))
+    expect(storedCart).not.toBeNull()
+    expect(JSON.parse(storedCart ?? 'null')).toMatchObject({ version: 2, items: [{ productId: 'P002', quantity: 1 }] })
 
     // There must be no automatic POST retry. Only this deliberate click may
     // replay the ambiguous attempt, with its original in-memory key.

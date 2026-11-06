@@ -17,6 +17,11 @@ class Prepared {
   bind(...values: (string | number | null)[]) {
     maximumBoundParameters = Math.max(maximumBoundParameters, values.length);
     if (values.length > 100) throw new Error('D1 queries support at most 100 bound parameters.');
+    // Host SQLite defaults to a much larger LIKE limit than deployed D1.
+    if (/\bLIKE\s+\?/i.test(this.sql) && values.some((value) =>
+      typeof value === 'string' && new TextEncoder().encode(value).length > 50)) {
+      throw new Error('D1 LIKE patterns support at most 50 UTF-8 bytes.');
+    }
     return new Prepared(this.sql, values);
   }
   async first<T>() { return (sqlite.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
@@ -109,6 +114,72 @@ type ErrorResponse = { code: string };
 const orderJson = async (response: Response) => await response.json() as OrderResponse;
 const stock = () => sqlite.prepare("SELECT stock FROM products WHERE id='P002'").get()!.stock;
 const count = () => sqlite.prepare('SELECT COUNT(*) AS count FROM orders').get()!.count;
+
+describe('Site literal substring search', () => {
+  const get = (path: string, session?: string) => handleApiRequest(new Request(`http://localhost/api/${path}`, {
+    ...(session ? { headers: { Cookie: `SMART_INVENTORY_SESSION=${session}` } } : {}),
+  }));
+
+  it.each([
+    ['ASCII at the former boundary', 'A'.repeat(48), 'name'],
+    ['ASCII beyond the former boundary', 'A'.repeat(49), 'name'],
+    ['a long valid product name', 'A'.repeat(90), 'name'],
+    ['Japanese at the former boundary', 'あ'.repeat(16), 'nameJa'],
+    ['Japanese beyond the former boundary', 'あ'.repeat(17), 'nameJa'],
+    ['Chinese beyond the former boundary', '旅'.repeat(17), 'nameZh'],
+    ['four-byte Unicode', '🧳'.repeat(17), 'nameJa'],
+    ['many literal percent signs', '%'.repeat(25), 'name'],
+    ['many literal underscores', '_'.repeat(25), 'name'],
+    ['many literal backslashes', '\\'.repeat(25), 'name'],
+  ])('matches %s without truncating the keyword', async (_label, keyword, field) => {
+    const product = { id: 'P900', name: 'Search fixture', priceYen: '42', stock: 2, weightKg: 0.5, [field]: keyword };
+    expect((await post('products', product, null, 'admin-session')).status).toBe(201);
+    const response = await get(`products?q=${encodeURIComponent(` ${keyword.toLowerCase()} `)}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [{ ...product, available: true }], total: 1 });
+  });
+
+  it.each(['%', '_', '\\', '%_\\'])('matches %s literally instead of treating it as a wildcard', async (keyword) => {
+    const product = { id: 'P900', name: `Literal ${keyword} marker`, priceYen: '42', stock: 2, weightKg: 0.5 };
+    expect((await post('products', product, null, 'admin-session')).status).toBe(201);
+    const response = await get(`products?q=${encodeURIComponent(keyword)}`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [{ ...product, available: true }], total: 1 });
+  });
+
+  it('retains ID/name case matching, nullable names, empty search, and stock filtering', async () => {
+    const id = await get('products?q=%20p001%20');
+    expect((await id.json() as { items: { id: string }[] }).items.map((item) => item.id)).toEqual(['P001']);
+    const name = await get('products?q=lApToP');
+    expect((await name.json() as { total: number }).total).toBe(1);
+    sqlite.prepare("UPDATE products SET stock=0 WHERE id='P001'").run();
+    expect(await (await get('products?q=LAPTOP&inStockOnly=true')).json()).toEqual({ items: [], total: 0 });
+    expect((await (await get('products?q=%20%20')).json() as { total: number }).total).toBe(2);
+    const missing = await get(`products?q=${encodeURIComponent('不存在'.repeat(100))}`);
+    expect(missing.status).toBe(200);
+    expect(await missing.json()).toEqual({ items: [], total: 0 });
+  });
+
+  it('handles long administrator customer filters and literal underscores without changing saved orders', async () => {
+    sqlite.prepare("INSERT INTO users VALUES ('cust_mer','unused','CUSTOMER'),('custXmer','unused','CUSTOMER')").run();
+    expect((await post('orders', intent)).status).toBe(201);
+    for (const [id, customer] of [['literal-order', 'cust_mer'], ['decoy-order', 'custXmer']]) {
+      sqlite.prepare('INSERT INTO orders VALUES (?,?,?,?,?,?)').run(id, customer, '0', 0, 1, '2026-01-01T00:00:00Z');
+    }
+    const saved = sqlite.prepare('SELECT * FROM orders ORDER BY order_id').all();
+    const short = await get('orders?customer=CUST', 'admin-session');
+    expect(short.status).toBe(200);
+    expect((await short.json() as { total: number }).total).toBe(3);
+    const literal = await get('orders?customer=cust_mer', 'admin-session');
+    expect((await literal.json() as { items: { orderId: string }[] }).items.map((order) => order.orderId)).toEqual(['literal-order']);
+    for (const keyword of ['x'.repeat(49), 'あ'.repeat(17), '%', '\\']) {
+      const response = await get(`orders?customer=${encodeURIComponent(keyword)}`, 'admin-session');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ items: [], total: 0 });
+    }
+    expect(sqlite.prepare('SELECT * FROM orders ORDER BY order_id').all()).toEqual(saved);
+  });
+});
 
 const pngImage = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j91sAAAAASUVORK5CYII=', 'base64'));
 // Complete one-pixel grayscale JPEG: quantization/frame/Huffman/scan/EOI.

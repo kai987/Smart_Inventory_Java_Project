@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "runtimeFingerprint": "46bde9638115283ef9ece2eb88d5c3edd231252784ff9664e8ce3fe431d5b5de",
+  "runtimeFingerprint": "cb3373a5806a3c8e2223325d3d8afe2891f60603fb7d0595d651f510cef4b53b",
   "inputs": [
     ".openai/hosting.json", "package.json", "package-lock.json", "vite.config.ts", "next.config.ts", "tsconfig.json",
     "tooling/framework-source-maps.mjs", "tooling/root-layout-import.mjs", "tooling/framework-imports.mjs",
@@ -13,7 +13,7 @@
     "src/api/orderApi.ts", "src/api/productApi.ts", "src/api/types.ts",
     "src/app/App.tsx", "src/app/providers.tsx", "src/app/queryClient.ts", "src/app/routes.tsx",
     "src/auth/AuthProvider.tsx", "src/auth/RequireAuth.tsx", "src/auth/RequireRole.tsx", "src/auth/safeNextPath.ts",
-    "src/cart/CartProvider.tsx", "src/cart/cartReducer.ts", "src/cart/cartStorage.ts", "src/cart/cartTypes.ts", "src/cart/checkoutIntent.ts",
+    "src/cart/CartProvider.tsx", "src/cart/cartReducer.ts", "src/cart/cartStorage.ts", "src/cart/cartSync.ts", "src/cart/cartTypes.ts", "src/cart/checkoutIntent.ts",
     "src/components/feedback/PageLoading.tsx", "src/components/feedback/QueryFeedback.tsx", "src/components/feedback/ToastProvider.tsx", "src/components/feedback/feedback.module.css",
     "src/components/layout/AdminLayout.tsx", "src/components/layout/PublicLayout.tsx", "src/components/layout/layout.module.css",
     "src/components/navigation/Brand.tsx",
@@ -67,7 +67,7 @@
     }
   ],
   "proof": {
-    "basis": "Pinned build probe: all 91 JS/CSS executable bodies equivalent after only known generated identifiers/hash references; no alpha-renaming.",
+    "basis": "Paired builds of the same final long-search/cross-tab-cart application snapshot: all 91 JS/CSS executable bodies equivalent (59 byte-identical) after only six known generated identities and emitted filenames. Renamed chunks match exact source-map source order and contents; no alpha-renaming. This isolates adapter behavior, not application changes versus the previous release.",
     "defaultError": "The two SSR virtual-reference importers are framework-owned. The five-module default error closure is fully completed before the virtual module, has no TLA/unknown modules, and does not reach that virtual module. Compiled namespace allocation, then-chain, getters and evaluation order are identical.",
     "fallback": "Any runtime source/config/dependency/upstream/environment drift keeps original imports and visible warnings. This is a snapshot-specific build normalization, not a general import optimizer.",
     "slot": "Intentionally unchanged: the namespace rewrite retained 17 exports instead of 4 and added executable code."

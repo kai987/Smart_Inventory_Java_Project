@@ -189,6 +189,10 @@ Successful checkout subtracts only the quantities in its submitted snapshot, pre
 
 Cart persistence handles denied storage access, quota exhaustion, and failed cleanup of malformed data without stopping the app or cart controls. Cart, language, and theme changes still work in memory on the current page. Checkout keys also have customer/cart-scoped in-memory protection: failed writes cannot generate a new key for an unchanged retry, and failed cleanup cannot resurrect a completed key. When storage is unavailable, recovery after reloading or closing the tab is not guaranteed. Check order history before placing a new order if an earlier result is uncertain after a reload.
 
+Updated tabs on the same origin receive cart-change notifications and apply each operation to the latest shared cart. Where Web Locks are available, the read/change/write step is serialized under an exclusive lock. Shared completed-order keys prevent consuming the same order quantities twice. An unresolved checkout retains its frozen quantities and retry key instead of replacing them with another tab's edits. An explicit local cart edit opts out of automatically restoring the previous snapshot after reload without deleting the unknown-result checkout key.
+
+A valid legacy v1 cart is carried into v2 on its first mutation. New contents are not written back to the old key, so an old deployed tab cannot roll v2 backward. Reload already-open tabs after an online update. When Web Locks are unavailable or rejected, persistence and synchronization remain best-effort without a guarantee for truly simultaneous writes. If persistence itself fails, the current page continues in memory.
+
 Both regular API calls and CSRF retrieval have a 15-second timeout per HTTP request. Timeout, cancellation, and network failure are distinguished and localized in English, Japanese, and Chinese. A timeout does not prove that server-side work was canceled. Writes are not automatically retried just because they timed out; checkout retains the cart and key for a manual retry. The existing single retry for a confirmed CSRF rejection and read-query retries remain unchanged.
 
 ## Production build

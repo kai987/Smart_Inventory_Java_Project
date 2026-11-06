@@ -1,13 +1,17 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
-import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { orderApi } from '../api/orderApi'
 import { productApi } from '../api/productApi'
 import type { Order, Product } from '../api/types'
-import { CART_STORAGE_KEY } from '../cart/cartTypes'
-import { useCart } from '../cart/CartProvider'
-import { getPendingCheckoutKey } from '../cart/checkoutIntent'
+import { CART_STORAGE_KEY, SHARED_CART_STORAGE_KEY } from '../cart/cartTypes'
+import { readSharedCart } from '../cart/cartStorage'
+import { CartProvider, useCart } from '../cart/CartProvider'
+import { completeCheckoutIntent, getCheckoutKey, getPendingCheckoutItems, getPendingCheckoutKey, getRestorableCheckoutItems } from '../cart/checkoutIntent'
+import { AuthContext } from '../auth/AuthProvider'
 import { LanguageSelect } from '../i18n/LanguageSelect'
 import type { AppLanguage } from '../i18n/language'
 import { authValue, renderWithProviders } from '../test/render'
@@ -23,16 +27,83 @@ const savedOrder: Order = {
   estimatedBoxes: 1,
 }
 
+beforeEach(() => {
+  // Each test is a fresh page; a remount WITHIN a test must retain its retry intent.
+  const items = getPendingCheckoutItems('customer')
+  const key = items === null ? null : getPendingCheckoutKey('customer', items)
+  if (key !== null) completeCheckoutIntent('customer', key)
+})
+
 function seedCart(quantity: number) {
   window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ version: 1, items: [{ productId: 'P001', quantity }] }))
 }
 
 function storedQuantity() {
-  const stored = JSON.parse(window.localStorage.getItem(CART_STORAGE_KEY) ?? '{}') as { items?: { quantity: number }[] }
+  const stored = JSON.parse(window.localStorage.getItem(SHARED_CART_STORAGE_KEY) ?? window.localStorage.getItem(CART_STORAGE_KEY) ?? '{}') as { items?: { quantity: number }[] }
   return stored.items?.[0]?.quantity
 }
 
 describe('CartPage', () => {
+  it('does not restore removed items on remount after an uncertain checkout, without losing its retry key', async () => {
+    seedCart(1)
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop], total: 1 })
+    const create = vi.spyOn(orderApi, 'create').mockRejectedValue(new Error('Response unavailable'))
+    const first = renderWithProviders(<CartPage />, { user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Place order' }))
+    await screen.findByRole('alert')
+    const key = create.mock.calls[0]?.[1]
+    await user.click(screen.getByRole('button', { name: 'Remove Laptop' }))
+    await waitFor(() => expect(readSharedCart()?.items).toEqual([]))
+    first.unmount()
+    renderWithProviders(<CartPage />, { user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
+    expect(screen.getByText('Your cart is empty')).toBeInTheDocument()
+    expect(getRestorableCheckoutItems('customer')).toBeNull()
+    expect(getPendingCheckoutKey('customer', [{ productId: 'P001', quantity: 1 }])).toBe(key)
+  })
+  it('restores a frozen retry after async authentication without clamping it against partially reduced stock', async () => {
+    const frozen = [{ productId: 'P001', quantity: 5 }]
+    const key = getCheckoutKey('customer', frozen)
+    const remote = { productId: 'P002', quantity: 1 }
+    localStorage.setItem(SHARED_CART_STORAGE_KEY, JSON.stringify({ version: 2, revision: 2, items: [...frozen, remote], consumedOrders: [] }))
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [{ ...laptop, stock: 3 }, { ...laptop, id: 'P002', name: 'Mouse' }], total: 2 })
+    const create = vi.spyOn(orderApi, 'create').mockResolvedValue({ ...savedOrder, items: [{ ...savedOrder.items[0], quantity: 5 }] })
+    function AsyncSession() {
+      const [ready, setReady] = useState(false)
+      return <AuthContext value={ready ? authValue({ username: 'customer', role: 'CUSTOMER' }) : authValue(null, { isLoading: true })}>
+        <button onClick={() => setReady(true)}>Finish authentication</button>
+        <CartProvider><CartPage /></CartProvider>
+      </AuthContext>
+    }
+    renderWithProviders(<AsyncSession />, { route: '/cart' })
+    const user = userEvent.setup()
+    expect(await screen.findByRole('spinbutton', { name: 'Quantity for Laptop' })).toHaveValue(5)
+    expect(readSharedCart()?.items).toEqual([...frozen, remote])
+    await user.click(screen.getByRole('button', { name: 'Finish authentication' }))
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: 'Quantity for Laptop' })).toHaveValue(5))
+    expect(screen.queryByRole('spinbutton', { name: 'Quantity for Mouse' })).not.toBeInTheDocument()
+    expect(getPendingCheckoutKey('customer', frozen)).toBe(key)
+    await user.click(screen.getByRole('button', { name: 'Place order' }))
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(create).toHaveBeenCalledWith({ items: frozen }, key, expect.any(AbortSignal))
+    await waitFor(() => expect(readSharedCart()?.items).toEqual([remote]))
+  })
+
+  it('finishes a confirmed replay and navigates to orders when another tab already consumed that order', async () => {
+    const key = getCheckoutKey('customer', [{ productId: 'P001', quantity: 1 }])
+    const remote = { productId: 'P002', quantity: 1 }
+    localStorage.setItem(SHARED_CART_STORAGE_KEY, JSON.stringify({ version: 2, revision: 2, items: [remote], consumedOrders: ['customer:Od-test'] }))
+    vi.spyOn(productApi, 'list').mockResolvedValue({ items: [laptop, { ...laptop, id: 'P002', name: 'Mouse' }], total: 2 })
+    const create = vi.spyOn(orderApi, 'create').mockResolvedValue(savedOrder)
+    function RouteProbe() { return <output aria-label="Current route">{useLocation().pathname}</output> }
+    renderWithProviders(<><CartPage /><RouteProbe /></>, { user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Place order' }))
+    await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/orders'))
+    expect(create).toHaveBeenCalledWith({ items: [{ productId: 'P001', quantity: 1 }] }, key, expect.any(AbortSignal))
+    expect(getPendingCheckoutKey('customer', [{ productId: 'P001', quantity: 1 }])).toBeNull()
+    expect(readSharedCart()?.items).toEqual([remote])
+    expect(screen.queryByText('Order placed successfully.')).not.toBeInTheDocument()
+  })
   it.each<{ language: AppLanguage; name: string; inputName: string; removeName: string; adjustment: string }>([
     { language: 'en', name: 'Laptop', inputName: 'Quantity for Laptop', removeName: 'Remove Laptop', adjustment: 'Laptop was adjusted to the available stock (2).' },
     { language: 'ja', name: 'ノートパソコン', inputName: 'ノートパソコンの数量', removeName: 'ノートパソコンを削除', adjustment: 'ノートパソコンの数量を在庫数（2）に調整しました。' },
