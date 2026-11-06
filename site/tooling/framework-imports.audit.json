@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "runtimeFingerprint": "46bde9638115283ef9ece2eb88d5c3edd231252784ff9664e8ce3fe431d5b5de",
+  "inputs": [
+    ".openai/hosting.json", "package.json", "package-lock.json", "vite.config.ts", "next.config.ts", "tsconfig.json",
+    "tooling/framework-source-maps.mjs", "tooling/root-layout-import.mjs", "tooling/framework-imports.mjs",
+    "app/[[...path]]/page.tsx", "app/api/[[...path]]/route.ts", "app/layout.tsx",
+    "db/env.d.ts", "db/index.ts", "db/schema.ts",
+    "lib/api-handler.test.ts", "lib/api-handler.ts", "lib/auth-contract.test.ts", "lib/catalog-contract.test.ts",
+    "lib/catalog-seed.ts", "lib/database.test.ts", "lib/database.ts", "lib/domain.test.ts", "lib/domain.ts",
+    "lib/http.ts", "lib/order-idempotency.ts", "lib/product-images.ts", "lib/product-media-migration.test.ts", "lib/product-names-migration.test.ts",
+    "src/api/adminApi.ts", "src/api/apiError.ts", "src/api/authApi.ts", "src/api/csrfStore.ts", "src/api/httpClient.ts",
+    "src/api/orderApi.ts", "src/api/productApi.ts", "src/api/types.ts",
+    "src/app/App.tsx", "src/app/providers.tsx", "src/app/queryClient.ts", "src/app/routes.tsx",
+    "src/auth/AuthProvider.tsx", "src/auth/RequireAuth.tsx", "src/auth/RequireRole.tsx", "src/auth/safeNextPath.ts",
+    "src/cart/CartProvider.tsx", "src/cart/cartReducer.ts", "src/cart/cartStorage.ts", "src/cart/cartTypes.ts", "src/cart/checkoutIntent.ts",
+    "src/components/feedback/PageLoading.tsx", "src/components/feedback/QueryFeedback.tsx", "src/components/feedback/ToastProvider.tsx", "src/components/feedback/feedback.module.css",
+    "src/components/layout/AdminLayout.tsx", "src/components/layout/PublicLayout.tsx", "src/components/layout/layout.module.css",
+    "src/components/navigation/Brand.tsx",
+    "src/components/ui/Button.tsx", "src/components/ui/Dialog.tsx", "src/components/ui/Field.tsx", "src/components/ui/Switch.tsx", "src/components/ui/ui.module.css",
+    "src/features/admin/admin.module.css", "src/features/orders/OrderCard.tsx", "src/features/orders/orders.module.css",
+    "src/features/products/ProductImage.module.css", "src/features/products/ProductImage.tsx", "src/features/products/ProductImageField.tsx",
+    "src/features/products/ProductList.tsx", "src/features/products/ProductToastMessage.tsx", "src/features/products/productCatalog.ts",
+    "src/features/products/productImages.ts", "src/features/products/products.module.css", "src/features/products/useProductImageDraft.ts", "src/features/products/useProductNames.ts",
+    "src/i18n/I18nProvider.tsx", "src/i18n/LanguageSelect.module.css", "src/i18n/LanguageSelect.tsx", "src/i18n/apiErrorLocalization.ts",
+    "src/i18n/formatters.ts", "src/i18n/i18n.ts", "src/i18n/language.ts", "src/i18n/resources/en.ts", "src/i18n/resources/ja.ts",
+    "src/i18n/resources/zhCN.ts", "src/i18n/types.d.ts", "src/i18n/useLocalizedDocumentTitle.ts",
+    "src/screens/AdminDashboardPage.tsx", "src/screens/AdminOrdersPage.tsx", "src/screens/AdminProductsPage.tsx", "src/screens/CartPage.tsx",
+    "src/screens/ForbiddenPage.tsx", "src/screens/LoginPage.tsx", "src/screens/NotFoundPage.tsx", "src/screens/OrdersPage.tsx",
+    "src/screens/ProductsPage.tsx", "src/screens/RegisterPage.tsx", "src/screens/pages.module.css",
+    "src/styles/global.css", "src/styles/tokens.css", "src/theme/ThemeProvider.tsx", "src/theme/ThemeToggle.tsx", "src/theme/theme.module.css",
+    "src/theme/theme.ts", "src/utils/currency.ts"
+  ],
+  "optionalEmptyDirectories": ["src/assets"],
+  "packages": [
+    {
+      "name": "vinext", "version": "1.0.1", "entryDirectory": "dist",
+      "files": {
+        "dist/shims/default-global-error.js": "8a411e8b5dd1e6ca627bcb10eb7cdd05493eb242dcb8ed4a2ad0a7d864efaf9c",
+        "dist/server/app-ssr-entry.js": "db1e1d348fe418da332d940e13ab8d6c07ab78600b579f00430350cd40365470",
+        "dist/plugins/rsc-client-reference-loaders.js": "e01ef39b4d4f2919cfbb8e65a54903afeb9462ebd0aa0e2c4ab3652e7dccf24d",
+        "dist/entries/app-ssr-entry.js": "6b025a80f17e7904229cf26502f074bd4770599224047b826b7781c76cd673bf",
+        "dist/entries/app-rsc-entry.js": "9f20ae83bc87fdf8d1537f2de6bcf6913760554579be771eb9b4a7fe4b8c992d",
+        "dist/entries/app-rsc-manifest.js": "d511da429673ee379a657f06f42b681807850137ec085c6cfae6e7ed195823cd"
+      }
+    },
+    {
+      "name": "@vitejs/plugin-rsc", "version": "0.5.35", "entryDirectory": "dist",
+      "files": { "dist/shared-CXQb6hk9.js": "535e235d200e8a61092d009b26f907f27026d48a25bafad7ab08349849cbb21a" }
+    },
+    {
+      "name": "react", "version": "19.2.8", "entryDirectory": ".",
+      "files": {
+        "index.js": "60caffdecbdc5db3bc4ec4e83df9488345ccb271d07533b9210bf5750918d97e",
+        "jsx-runtime.js": "b392951a77d0a2e6a6bd017e49d768481ae5b63c4109c6c31f622cf7b2433edc",
+        "cjs/react.production.js": "d348b80a78c8ea0bd02b1990c7b7b514f5c276f9e74fee6e3976297585385961",
+        "cjs/react-jsx-runtime.production.js": "1e46f15002696985e80c61d47aaa30dabb03c954270a690f5f7dfbbacfa9002b"
+      }
+    },
+    {
+      "name": "vite", "version": "8.3.5", "entryDirectory": "dist/node",
+      "files": { "dist/node/index.js": "3f6680590bb474e6f3ce3cb86c0b7ff18acccf393a36c48c82e67fdca470ed19" }
+    },
+    {
+      "name": "rolldown", "version": "1.2.16", "entryDirectory": "dist",
+      "files": { "dist/index.mjs": "cd33256000c0b69825af743e2622206abd11ebf77f62ea01314d0fe22403942e" }
+    }
+  ],
+  "proof": {
+    "basis": "Pinned build probe: all 91 JS/CSS executable bodies equivalent after only known generated identifiers/hash references; no alpha-renaming.",
+    "defaultError": "The two SSR virtual-reference importers are framework-owned. The five-module default error closure is fully completed before the virtual module, has no TLA/unknown modules, and does not reach that virtual module. Compiled namespace allocation, then-chain, getters and evaluation order are identical.",
+    "fallback": "Any runtime source/config/dependency/upstream/environment drift keeps original imports and visible warnings. This is a snapshot-specific build normalization, not a general import optimizer.",
+    "slot": "Intentionally unchanged: the namespace rewrite retained 17 exports instead of 4 and added executable code."
+  },
+  "references": [
+    "https://github.com/rolldown/rolldown/issues/7541",
+    "https://github.com/cloudflare/vinext/blob/main/packages/vinext/src/plugins/rsc-client-reference-loaders.ts"
+  ]
+}

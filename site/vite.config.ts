@@ -4,6 +4,7 @@ import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json' with { type: 'json' };
 import { frameworkSourceMaps } from './tooling/framework-source-maps.mjs';
+import { frameworkImports } from './tooling/framework-imports.mjs';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -54,6 +55,7 @@ export default defineConfig(async () => {
       vinext(),
       sites(),
       frameworkSourceMaps(),
+      frameworkImports(),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: localBindingConfig,

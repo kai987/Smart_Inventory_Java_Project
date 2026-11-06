@@ -264,7 +264,9 @@ password: user123
 
 `package.json` の Minimatch override は、影響を受ける7～11.0.0だけを修正版11へ置き換え、旧APIを使う Minimatch 3 は変更しません。Site の Drizzle Kit は `0.31.11` に固定し、この版の実行モジュールが参照しない旧依存宣言 `@esbuild-kit/esm-loader` だけを、公式後継の `tsx@4.23.15` への npm alias で解決します。これは旧ローダー API の互換実装への置き換えではなく、他の Drizzle バージョンにも適用できる設定ではありません。参照の追加を検出すると失敗するガードと、分離した JS・TS・MJS 設定の生成テストで、既存スキーマ・マイグレーション・ジャーナルを変更しないことを確認します。
 
-Site の [source-map アダプター](site/tooling/framework-source-maps.mjs) は、固定した Vinext・RSC の既存3フックに、実際の編集に対応する MagicString のマップを付加します。実行コードの出力バイトは変えず、バージョン・配布ソースのハッシュが変わると停止します。警告のフィルターや動的 import グラフの書き換えは行いません。フレームワークの静的・動的 import の重複による `INEFFECTIVE_DYNAMIC_IMPORT` 通知は残る場合があり、遅延読み込みの構造は維持します。
+既存の [source-map アダプター](site/tooling/framework-source-maps.mjs) は維持します。固定した Vinext・RSC の既存3フックに、実際の編集に対応する MagicString のマップを付加し、実行コードの出力バイトは変えません。このアダプターは警告をフィルターせず、動的 import グラフも変更しません。バージョン・配布ソースのハッシュが変わると、このガードは引き続き停止して再検証を求めます。
+
+別の [import アダプター](site/tooling/framework-imports.mjs) は、監査済み本番スナップショットに限り、root layout と `default-global-error` の重複2経路を正規化します。既存コンパイラーの Promise・getter の形を維持し、記録した生成 ID・出力ファイル名だけを正規化した比較では JS/CSS 本文91個が一致しました。追加ダウンロードの削減や性能向上は主張しません。未知のソース・設定・依存・環境や watch ビルドでは、元の import と警告をそのまま残す無操作に戻ります。Slot は変更しません。試案では保持される export が4個から17個に増え、SSR JavaScript も約1.8 KB増えたため採用せず、対応する `INEFFECTIVE_DYNAMIC_IMPORT` 通知を意図的に残しています。
 
 ```bash
 npm --prefix frontend audit
