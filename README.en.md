@@ -108,7 +108,7 @@ Controllers translate HTTP requests and DTOs. `SmartInventoryService` owns the s
 - A Chromium-compatible Playwright browser for E2E tests
 - Rust 1.93 or newer with Cargo, rustfmt, and Clippy only when using the Rust backend; Java is not required for the Rust workflow
 
-The Maven Wrapper downloads Maven 3.9.16 automatically and verifies its SHA-256 checksum. A global Maven installation is not required.
+The official Apache Maven Wrapper 3.3.4 (`only-script`) downloads Maven 3.9.16 automatically and verifies its SHA-256 checksum. A global Maven installation is not required.
 
 Confirm the main tool versions with:
 
@@ -264,17 +264,19 @@ Both the frontend and Site use ESLint 10. The Site explicitly configures plugins
 
 The Minimatch override replaces affected versions 7 through 11.0.0 with the repaired 11.x implementation, leaving legacy Minimatch 3 callers unchanged. The Site pins Drizzle Kit to `0.31.11` and resolves only its unused legacy `@esbuild-kit/esm-loader` dependency declaration through an npm alias to its official successor, `tsx@4.23.15`. This is not an implementation of the old loader API and must not be generalized to other Drizzle versions. A fail-closed reference guard and isolated JS/TS/MJS configuration-generation tests check that the existing schema, migrations, and journal remain unchanged.
 
+The Site's [source-map adapter](site/tooling/framework-source-maps.mjs) adds truthful MagicString maps for actual edits in three existing hooks of the pinned Vinext/RSC versions. Executable output stays byte-for-byte unchanged; version/source-hash changes fail closed. It neither filters warnings nor rewrites dynamic-import graphs. Redundant static/dynamic framework import edges may still produce `INEFFECTIVE_DYNAMIC_IMPORT` notices; lazy-loading structure remains unchanged.
+
 ```bash
 npm --prefix frontend audit
 npm --prefix site audit
 npm --prefix site run test:tooling
 ```
 
-Also rerun lint, type checks, unit tests, and builds after updates. Do not use `npm audit fix --force` for unrelated upgrades/downgrades or rewrite existing migration history to make checks pass.
+Also rerun lint, type checks, unit tests, and builds after updates. Do not use `npm audit fix --force` for unrelated upgrades/downgrades or rewrite existing migration history to make checks pass. If npm 12 blocks native dependency installation scripts, do not grant blanket approval or relax machine-wide policy just to remove the notices.
 
 The backend retains Java 21 and uses [Spring Boot 4.1.2](https://spring.io/blog/2026/10/23/spring-boot-4-1-2-available-now/). Framework dependencies, including embedded Tomcat 11, follow Spring Boot's BOM-managed versions; Tomcat is not manually pinned to the 10.1 line. JSON handling uses Jackson 3 directly, without a Jackson 2 compatibility module.
 
-Maven 3.9.16 addresses the old Guice terminal-deprecation warning for Unsafe usage. Mockito is loaded at startup with `-javaagent` only in Surefire's test JVM, avoiding dynamic attachment; the runnable application JAR needs no agent. JDK 24 may still emit Jansi native-access warnings, so this does not mean that every warning has been eliminated.
+The wrapper delegates to Maven's official launcher without adding project-wide JDK options. Mockito combines test-only `MockMakers.SUBCLASS` and `member-accessor-reflection` settings for ordinary mocks; no test agent or `--add-opens` is configured. Final classes/methods, static methods, and constructor mocks are unsupported. Any future inline mock-maker opt-in or deep JDK-module access requires separate review and explicit, test-scoped configuration.
 
 This migration adapts dependency APIs, adds no new application features, and preserves the existing `/api` JSON contract and UTF-8 CSV format. Java's `runtime-data/`, Rust's `runtime-data-rust/`, and the Site's D1/R2 storage remain separate. Rust requires Tokio 1.53.3 or newer. This maintenance is not a comprehensive vulnerability audit of every Java/Rust dependency.
 

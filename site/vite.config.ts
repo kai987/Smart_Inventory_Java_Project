@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json' with { type: 'json' };
+import { frameworkSourceMaps } from './tooling/framework-source-maps.mjs';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -52,6 +53,7 @@ export default defineConfig(async () => {
     plugins: [
       vinext(),
       sites(),
+      frameworkSourceMaps(),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: localBindingConfig,

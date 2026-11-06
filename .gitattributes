@@ -1,0 +1,3 @@
+# Preserve Apache's platform-specific wrapper line endings.
+backend/mvnw text eol=lf
+backend/mvnw.cmd text eol=crlf

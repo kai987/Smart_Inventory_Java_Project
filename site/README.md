@@ -25,9 +25,11 @@ Dependency overrides are scoped. Patched Minimatch 11 replaces only vulnerable 7
 
 ESLint 10 uses an explicit configuration of supported plugins, without forcing unsupported peer ranges. The [rule mapping](tooling/eslint-rule-map.json) and regression fixtures track the previous React/Next.js/Hooks/TypeScript/accessibility/import checks, including conservative restrictions on class components and JSX outside TSX. `npm run lint` also runs TypeScript and fails on warnings. `npm run test:tooling` is the focused maintenance-regression command and is also included in `npm run test`.
 
+The [framework source-map adapter](tooling/framework-source-maps.mjs) keeps the pinned Vinext/RSC versions and adds truthful MagicString maps for three audited hooks without changing their executable output bytes. Version/source-hash guards fail closed. This is not a warning filter or a dynamic-import graph rewrite. Redundant static/dynamic framework import edges may still emit `INEFFECTIVE_DYNAMIC_IMPORT` notices; lazy-loading structure is preserved.
+
 Recheck audit, tooling, lint, types, tests, and builds when dependencies change. Zero audit findings do not mean zero maintenance warnings or establish overall security. Do not force a framework/linter downgrade just to satisfy audit output.
 
-Use Node.js 24 and npm 11 from this directory:
+Use Node.js 24 and npm 11 from this directory. If npm 12 reports blocked native dependency installation scripts, review approvals individually; these instructions do not authorize blanket script approval or a machine-wide policy change.
 
 ```bash
 npx --yes npm@11.6.2 ci

@@ -108,7 +108,7 @@ flowchart TD
 - E2E テスト用の Playwright Chromium
 - Rust 版を使う場合のみ、Rust 1.93 以降と Cargo・rustfmt・Clippy。Rust 版のビルド・実行には Java は不要
 
-Maven Wrapper が SHA-256 を検証して Maven 3.9.16 を自動的にダウンロードするため、Maven のグローバルインストールは不要です。
+公式 Apache Maven Wrapper 3.3.4（`only-script`）が SHA-256 を検証して Maven 3.9.16 を自動的にダウンロードするため、Maven のグローバルインストールは不要です。
 
 主なツールのバージョンを確認します。
 
@@ -264,17 +264,19 @@ password: user123
 
 `package.json` の Minimatch override は、影響を受ける7～11.0.0だけを修正版11へ置き換え、旧APIを使う Minimatch 3 は変更しません。Site の Drizzle Kit は `0.31.11` に固定し、この版の実行モジュールが参照しない旧依存宣言 `@esbuild-kit/esm-loader` だけを、公式後継の `tsx@4.23.15` への npm alias で解決します。これは旧ローダー API の互換実装への置き換えではなく、他の Drizzle バージョンにも適用できる設定ではありません。参照の追加を検出すると失敗するガードと、分離した JS・TS・MJS 設定の生成テストで、既存スキーマ・マイグレーション・ジャーナルを変更しないことを確認します。
 
+Site の [source-map アダプター](site/tooling/framework-source-maps.mjs) は、固定した Vinext・RSC の既存3フックに、実際の編集に対応する MagicString のマップを付加します。実行コードの出力バイトは変えず、バージョン・配布ソースのハッシュが変わると停止します。警告のフィルターや動的 import グラフの書き換えは行いません。フレームワークの静的・動的 import の重複による `INEFFECTIVE_DYNAMIC_IMPORT` 通知は残る場合があり、遅延読み込みの構造は維持します。
+
 ```bash
 npm --prefix frontend audit
 npm --prefix site audit
 npm --prefix site run test:tooling
 ```
 
-更新時は、これらに加えて Lint・型チェック・単体テスト・ビルドを再実行します。`npm audit fix --force` による無差別な更新・ダウングレードや、検証を通すための既存マイグレーション履歴の変更は行いません。
+更新時は、これらに加えて Lint・型チェック・単体テスト・ビルドを再実行します。`npm audit fix --force` による無差別な更新・ダウングレードや、検証を通すための既存マイグレーション履歴の変更は行いません。npm 12 がネイティブ依存のインストールスクリプトをブロックしても、通知を消すための一括承認やマシン全体のポリシー緩和は行いません。
 
 Java 21 を維持し、バックエンドは [Spring Boot 4.1.2](https://spring.io/blog/2026/10/23/spring-boot-4-1-2-available-now/) を使用します。組み込み Tomcat 11 などのフレームワーク依存は Spring Boot の BOM によるバージョン管理に従い、Tomcat 10.1 への手動固定は行いません。JSON 処理は Jackson 3 を直接使用し、Jackson 2 互換モジュールは導入しません。
 
-Maven 3.9.16 への更新で旧 Guice の Unsafe 使用に関する削除予定 API 警告に対応します。Mockito は Surefire のテスト JVM にだけ `-javaagent` で起動時に読み込み、動的アタッチに依存しません。実行用 JAR の起動にエージェントは不要です。ただし JDK 24 では Jansi の native-access 警告が残る場合があり、すべての警告が解消されたという意味ではありません。
+Wrapper は公式 Maven ランチャーに処理を委ね、プロジェクト全体の JDK オプションは追加しません。Mockito はテスト専用の `MockMakers.SUBCLASS` と `member-accessor-reflection` を組み合わせ、通常のモックを使用します。テスト用エージェントや `--add-opens` は設定しません。final クラス・final メソッド、static メソッド、コンストラクターのモックは対象外です。将来の inline mock maker の有効化や JDK モジュール内部への深いアクセスには、テスト範囲を限定した明示的な設定と別途の検討が必要です。
 
 この移行は機能追加ではなく、既存の `/api` JSON 契約と UTF-8 CSV 形式を維持するための依存 API 対応です。Java の `runtime-data/`、Rust の `runtime-data-rust/`、Site の D1・R2 は引き続き分離します。Rust は Tokio 1.53.3以上を要求します。今回の依存更新を、Java・Rust を含む全依存の包括的な脆弱性監査とは扱いません。
 
