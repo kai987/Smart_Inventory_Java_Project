@@ -78,6 +78,10 @@
 .cartError { margin: 0 0 18px; padding: 12px 14px; border-radius: 9px; background: var(--danger-soft); color: var(--danger-text); font-size: 0.88rem; }
 
 .ordersList { display: grid; gap: 18px; }
+.pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+.pagination p { margin: 0; color: var(--muted); font-size: 0.86rem; }
+.paginationControls { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
+.paginationControls > span { padding-inline: 4px; color: var(--muted); font-size: 0.86rem; }
 .orderCard { border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--surface); overflow: hidden; transition: border-color 180ms ease, box-shadow 180ms ease; }
 .orderSummary { display: grid; grid-template-columns: minmax(260px, 1.2fr) minmax(500px, 2fr); align-items: center; gap: 30px; padding: 23px 26px; }
 .overline { display: block; margin-bottom: 3px; color: var(--muted); font-size: 0.78rem; }

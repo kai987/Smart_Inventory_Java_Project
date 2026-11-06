@@ -134,7 +134,7 @@ export function CartPage() {
       ])
       if (!isCurrentSession(submission.user, submission.sessionVersion)) return
       if (consumed) showToast(t('cart.orderSuccess'), 'success')
-      void navigate('/orders')
+      void navigate('/orders', { state: { showLatest: true, username: submission.user.username } })
     },
     onError: (error, submission) => {
       if (!isCurrentSession(submission.user, submission.sessionVersion)) return

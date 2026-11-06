@@ -45,6 +45,16 @@ export const ja = {
     unknown: '不明',
     notAvailable: '利用できません',
   },
+  pagination: {
+    label: '注文のページ切り替え',
+    first: '最初のページ',
+    previous: '前へ',
+    next: '次へ',
+    last: '最後のページ',
+    page: '{{pages}}ページ中 {{page}}ページ',
+    pageUnknown: '{{page}}ページ',
+    range: '全{{total}}件中 {{start}}–{{end}}件',
+  },
   products: {
     title: '商品一覧',
     catalogIntro: '日々の暮らしに役立つ商品を探して、価格を比較しながら注文できます。',

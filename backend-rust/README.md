@@ -59,6 +59,17 @@ Login and registration perform BCrypt work outside the inventory lock. They shar
 
 The shared cart retains its key across an unchanged retry and page reload, freezes checkout controls while pending, and removes only the successfully submitted quantities. Java and the D1-backed Site implement the same key and response semantics.
 
+## Order-list pagination
+
+Java and Rust support optional `page`, `size`, and `sort` query parameters on `GET /api/orders/me` (the authenticated customer's orders) and `GET /api/orders` (admin only, retaining the optional `customer` filter).
+
+- Supplying any pagination parameter enables paging: `page` defaults to `1`, `size` to `20`, and `sort` to `asc`.
+- `page` accepts `1`–`1000000`, `size` accepts `1`–`100`, and `sort` is exactly `asc` or `desc`. Numeric values use ASCII digits; leading zeros are accepted. Empty, repeated, signed, whitespace-containing, fractional, exponent, or out-of-range values return HTTP 400 (`VALIDATION_ERROR`). Unknown parameter names remain ignored as before.
+- Omitting all three parameters preserves the full legacy ascending response. `desc` reverses that existing order; it does not introduce timestamps or change CSV records.
+- The response remains `{ "items": [...], "total": 45 }`. `total` is the overall number of matched orders, not the current page length. A valid page beyond the end returns empty `items` with the same `total`.
+
+For example, `/api/orders/me?page=2&size=20&sort=asc` returns the second customer page, while `/api/orders?page=1&size=5&sort=desc` returns the most recent five entries in the existing order. Filters and authorization are applied before selecting a page.
+
 ## Tests
 
 ```bash
@@ -127,6 +138,6 @@ Rust holds an exclusive advisory lock for its data directory. **That lock is onl
 
 - This is a compatibility-oriented alternative backend, not an automatic performance improvement. No Java-versus-Rust benchmark is claimed.
 - CSV records and sessions are held in memory. Storage is single-instance, and sessions do not persist across restarts.
-- Demo accounts, password reset, account lockout, rate limiting, pagination, and other production-hardening needs have the same limits described in the root README.
+- Demo accounts, password reset, account lockout, rate limiting, and other production-hardening needs have the same limits described in the root README. Order paging bounds the response, but CSV storage still keeps the complete history in memory.
 - Existing Java coursework remains the appropriate source when a course submission specifically requires `.java` files.
 - Building locally does not commit code, update GitHub, or publish a hosted Site.

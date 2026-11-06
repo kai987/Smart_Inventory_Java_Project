@@ -45,6 +45,16 @@ export const zhCN = {
     unknown: '未知',
     notAvailable: '不可用',
   },
+  pagination: {
+    label: '订单分页',
+    first: '第一页',
+    previous: '上一页',
+    next: '下一页',
+    last: '最后一页',
+    page: '第 {{page}} 页，共 {{pages}} 页',
+    pageUnknown: '第 {{page}} 页',
+    range: '共 {{total}} 条订单，显示 {{start}}–{{end}} 条',
+  },
   products: {
     title: '商品列表',
     catalogIntro: '探索日常好物，比较商品价格，轻松准备订单。',

@@ -265,8 +265,8 @@ describe('AuthProvider private query isolation', () => {
     expect(await screen.findByText('B-order')).toBeInTheDocument()
     await act(async () => { pending.resolve({ items: [order('A-private-order', customerA)], total: 1 }); await pending.promise })
     expect(screen.queryByText('A-private-order')).not.toBeInTheDocument()
-    expect(client.getQueryData(queryKeys.myOrders(customerA.username, customerA.role))).toBeUndefined()
-    expect(client.getQueryData(queryKeys.myOrders(customerB.username, customerB.role))).toEqual({ items: [order('B-order', customerB)], total: 1 })
+    expect(client.getQueriesData({ queryKey: queryKeys.myOrders(customerA.username, customerA.role) })).toEqual([])
+    expect(client.getQueryData(queryKeys.myOrders(customerB.username, customerB.role, { page: 1, size: 20, sort: 'asc' }))).toEqual({ items: [order('B-order', customerB)], total: 1 })
   })
 
   it('removes admin caches and preserves public products when an admin signs in as a customer', async () => {

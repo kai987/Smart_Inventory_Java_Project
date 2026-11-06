@@ -185,6 +185,14 @@ The cart freezes its edit controls while an order is pending. Checkout sends an 
 
 Successful checkout subtracts only the quantities in its submitted snapshot, preserving cart additions made elsewhere while the request was in flight. A lost response can be retried with the original key even if the accepted order has exhausted current stock. Local CSV backends still require one writer per data directory; idempotency does not turn CSV storage into a multi-instance database.
 
+### Order-list paging and Site session maintenance
+
+Java, Rust, and Site support optional `page` (1–1,000,000; default 1), `size` (1–100; default 20), and `sort` (`asc` or `desc`; default `asc`) on `GET /api/orders/me` and the administrator's `GET /api/orders`. Supplying any of them enables paging; omitting all three preserves the complete ascending legacy response. The shape remains `{ items, total }`, where `total` counts all orders matched after authorization and the customer filter. A valid page beyond the end returns empty `items` with the same `total`. Descending order reverses the existing order; it does not add timestamps or fields to local CSV records.
+
+Empty, repeated, invalid, or out-of-range paging values return HTTP 400 (`VALIDATION_ERROR`). Numbers use ASCII digits and may have leading zeros, but not signs, whitespace, fractions, or exponent notation. Unknown parameter names remain ignored as before. Order screens request 20 entries in ascending order; the administrator dashboard requests the latest-side five in descending order. Existing authorization boundaries and customer-filter semantics are unchanged.
+
+The Site removes expired sessions on ordinary API access, excluding public image reads. Successful sweeps are spaced at least five minutes apart per isolate/database binding and delete at most 100 oldest expired rows each. This is access-driven work, not an idle cron job. A failure does not fail the normal API operation; a subsequent access may retry after 60 seconds. The deletion rechecks expiry and leaves valid sessions, products, orders, users, and images unchanged.
+
 ### Browser storage and connection failures
 
 Cart persistence handles denied storage access, quota exhaustion, and failed cleanup of malformed data without stopping the app or cart controls. Cart, language, and theme changes still work in memory on the current page. Checkout keys also have customer/cart-scoped in-memory protection: failed writes cannot generate a new key for an unchanged retry, and failed cleanup cannot resurrect a completed key. When storage is unavailable, recovery after reloading or closing the tab is not guaranteed. Check order history before placing a new order if an earlier result is uncertain after a reload.
@@ -339,6 +347,15 @@ npm --prefix site run lint
 npm --prefix site run build
 ```
 
+Exercise the built Worker through actual Wrangler/workerd with fresh local D1/R2, then run the shared browser journeys against it:
+
+```bash
+npm --prefix site run test:integration
+(cd frontend && npm exec -- playwright test --config playwright.site.config.ts)
+```
+
+These require Node.js 24, installed Site/frontend dependencies, and Playwright Chromium. They cover authentication, CSRF, roles, atomic orders/replay, images, long searches, pagination, and expired-session maintenance using new local fixtures. The shared Site browser suite uses port 4175. They do not use developer CSV data, existing local D1/R2 state, deployed Site data, or account credentials. A dedicated Site CI job uses the same runtime and commands.
+
 For a local Sites preview:
 
 ```bash
@@ -399,9 +416,9 @@ Concurrent reads use a read lock. Registration, inventory changes, and order cre
 
 - CSV files are local, single-instance storage. External writers and horizontally scaled application instances are not supported.
 - The backup-and-replace process reduces multi-file failure risk but is not equivalent to an ACID database transaction or durable write-ahead log.
-- Large product and order collections are held in memory and API list endpoints are not paginated.
+- Local backends keep complete product/order collections in memory. Order paging bounds the response but does not replace CSV persistence with a database. Product lists still return the complete catalog.
 - Demo accounts use published passwords. The application has no password reset, email verification, multi-factor authentication, account lockout, or production-grade rate limiting.
-- User administration, product image upload, payment, shipping integration, and real warehouse bin tracking are outside this demo's scope. The included demo products instead use bundled, ID-mapped images.
+- User administration, payment, shipping integration, and real warehouse bin tracking are outside this demo's scope. The included demo products use bundled, ID-mapped images.
 - Browser E2E tests target the configured local Chromium environment; broader browser and device coverage would be required for production release.
 - Rust prevents another Rust process from opening its CSV directory, but this advisory lock is not honored by the Java backend or external editors. Never point running Java and Rust processes at the same data directory. In-memory sessions do not transfer between backends or survive a server restart.
 

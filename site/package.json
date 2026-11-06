@@ -12,6 +12,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --max-warnings 0 && tsc --noEmit --incremental false",
     "test": "npm run test:tooling && vitest run --config vitest.config.ts",
     "test:tooling": "node --test scripts/*.test.mjs",
+    "test:integration": "node scripts/site-runtime-integration.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

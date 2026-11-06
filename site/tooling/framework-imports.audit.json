@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "runtimeFingerprint": "cb3373a5806a3c8e2223325d3d8afe2891f60603fb7d0595d651f510cef4b53b",
+  "runtimeFingerprint": "c421704978df259bd03af05a530fe70dccec830c20115c0ed06408e9d6a162c8",
   "inputs": [
     ".openai/hosting.json", "package.json", "package-lock.json", "vite.config.ts", "next.config.ts", "tsconfig.json",
     "tooling/framework-source-maps.mjs", "tooling/root-layout-import.mjs", "tooling/framework-imports.mjs",
@@ -8,7 +8,9 @@
     "db/env.d.ts", "db/index.ts", "db/schema.ts",
     "lib/api-handler.test.ts", "lib/api-handler.ts", "lib/auth-contract.test.ts", "lib/catalog-contract.test.ts",
     "lib/catalog-seed.ts", "lib/database.test.ts", "lib/database.ts", "lib/domain.test.ts", "lib/domain.ts",
-    "lib/http.ts", "lib/order-idempotency.ts", "lib/product-images.ts", "lib/product-media-migration.test.ts", "lib/product-names-migration.test.ts",
+    "lib/http.ts", "lib/order-idempotency.ts", "lib/order-pagination.test.ts", "lib/order-pagination.ts",
+    "lib/product-images.ts", "lib/product-media-migration.test.ts", "lib/product-names-migration.test.ts",
+    "lib/session-maintenance.test.ts", "lib/session-maintenance.ts",
     "src/api/adminApi.ts", "src/api/apiError.ts", "src/api/authApi.ts", "src/api/csrfStore.ts", "src/api/httpClient.ts",
     "src/api/orderApi.ts", "src/api/productApi.ts", "src/api/types.ts",
     "src/app/App.tsx", "src/app/providers.tsx", "src/app/queryClient.ts", "src/app/routes.tsx",
@@ -18,7 +20,7 @@
     "src/components/layout/AdminLayout.tsx", "src/components/layout/PublicLayout.tsx", "src/components/layout/layout.module.css",
     "src/components/navigation/Brand.tsx",
     "src/components/ui/Button.tsx", "src/components/ui/Dialog.tsx", "src/components/ui/Field.tsx", "src/components/ui/Switch.tsx", "src/components/ui/ui.module.css",
-    "src/features/admin/admin.module.css", "src/features/orders/OrderCard.tsx", "src/features/orders/orders.module.css",
+    "src/features/admin/admin.module.css", "src/features/orders/OrderCard.tsx", "src/features/orders/OrderPagination.tsx", "src/features/orders/orders.module.css",
     "src/features/products/ProductImage.module.css", "src/features/products/ProductImage.tsx", "src/features/products/ProductImageField.tsx",
     "src/features/products/ProductList.tsx", "src/features/products/ProductToastMessage.tsx", "src/features/products/productCatalog.ts",
     "src/features/products/productImages.ts", "src/features/products/products.module.css", "src/features/products/useProductImageDraft.ts", "src/features/products/useProductNames.ts",
@@ -67,7 +69,7 @@
     }
   ],
   "proof": {
-    "basis": "Paired builds of the same final long-search/cross-tab-cart application snapshot: all 91 JS/CSS executable bodies equivalent (59 byte-identical) after only six known generated identities and emitted filenames. Renamed chunks match exact source-map source order and contents; no alpha-renaming. This isolates adapter behavior, not application changes versus the previous release.",
+    "basis": "Paired builds of the same final paginated-orders/session-maintenance application snapshot: all 91 JS/CSS executable bodies equivalent (59 byte-identical) after only six known generated identities and emitted filenames. Renamed chunks match exact source-map source order and contents; no alpha-renaming. This isolates adapter behavior, not application changes versus the previous release.",
     "defaultError": "The two SSR virtual-reference importers are framework-owned. The five-module default error closure is fully completed before the virtual module, has no TLA/unknown modules, and does not reach that virtual module. Compiled namespace allocation, then-chain, getters and evaluation order are identical.",
     "fallback": "Any runtime source/config/dependency/upstream/environment drift keeps original imports and visible warnings. This is a snapshot-specific build normalization, not a general import optimizer.",
     "slot": "Intentionally unchanged: the namespace rewrite retained 17 exports instead of 4 and added executable code."

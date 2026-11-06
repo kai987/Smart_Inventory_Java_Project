@@ -43,6 +43,16 @@ export const en = {
     unknown: 'Unknown',
     notAvailable: 'Not available',
   },
+  pagination: {
+    label: 'Order pagination',
+    first: 'First page',
+    previous: 'Previous',
+    next: 'Next',
+    last: 'Last page',
+    page: 'Page {{page}} of {{pages}}',
+    pageUnknown: 'Page {{page}}',
+    range: '{{start}}–{{end}} of {{total}} orders',
+  },
   products: {
     title: 'Products',
     catalogIntro: 'Explore everyday essentials, compare prices, and build your order.',

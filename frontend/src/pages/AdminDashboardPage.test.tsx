@@ -34,6 +34,19 @@ function mockDashboard() {
 }
 
 describe('AdminDashboardPage product names', () => {
+  it('requests only the five newest orders and preserves the descending response order', async () => {
+    const { orders } = mockDashboard()
+    const newest = Array.from({ length: 5 }, (_, index) => ({
+      orderId: `O-latest-${77 - index}`, customerName: 'customer', items: [],
+      totalPriceYen: '2500', totalWeightKg: 0.2, estimatedBoxes: 1,
+    }))
+    orders.mockResolvedValue({ items: newest, total: 77 })
+    renderWithProviders(<AdminDashboardPage />, { user: { username: 'admin', role: 'ADMIN' } })
+    const title = await screen.findByRole('heading', { name: 'Latest saved orders' })
+    const panel = title.closest('section')!
+    expect([...panel.querySelectorAll('strong')].map((element) => element.textContent)).toEqual(newest.map((order) => order.orderId))
+    expect(orders).toHaveBeenCalledWith('', expect.any(AbortSignal), { page: 1, size: 5, sort: 'desc' })
+  })
   it.each(languageCases)('shows $language names in low stock while preserving custom names and IDs', async (labels) => {
     mockDashboard()
     renderWithProviders(<AdminDashboardPage />, { language: labels.language, user: { username: 'admin', role: 'ADMIN' } })

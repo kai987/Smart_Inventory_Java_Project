@@ -329,6 +329,225 @@ fn app() -> (TempDir, Router) {
     fixture(Duration::from_secs(1800), false)
 }
 
+fn pagination_app() -> (TempDir, Router) {
+    let directory = tempfile::tempdir().unwrap();
+    let data_dir = directory.path().join("data");
+    std::fs::create_dir(&data_dir).unwrap();
+    let rows = (0..52)
+        .map(|index| {
+            format!(
+                "O{index:03},{},P001:Saved Product:100:0.1:1\n",
+                if index < 45 {
+                    "customer"
+                } else {
+                    "other_customer"
+                }
+            )
+        })
+        .collect::<String>();
+    std::fs::write(data_dir.join("orders.csv"), rows).unwrap();
+    let store = Store::open(&data_dir).unwrap();
+    let config = Config {
+        data_dir,
+        static_dir: directory.path().join("public"),
+        ..Config::default()
+    };
+    (directory, router(store, config))
+}
+
+fn order_ids(start: usize, end: usize) -> Vec<String> {
+    (start..end).map(|index| format!("O{index:03}")).collect()
+}
+
+async fn assert_order_page(client: &mut Client, path: &str, total: usize, ids: Vec<String>) {
+    let response = client.send(Method::GET, path, None).await;
+    assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.text);
+    assert_eq!(response.body["total"], json!(total), "{path}");
+    assert_eq!(response.body.as_object().unwrap().len(), 2);
+    let actual = response.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|order| order["orderId"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, ids, "{path}");
+}
+
+#[tokio::test]
+async fn customer_order_pages_preserve_legacy_order_overall_total_and_private_scope() {
+    let (_directory, app) = pagination_app();
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    assert_order_page(&mut customer, "/api/orders/me", 45, order_ids(0, 45)).await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?unknown=ignored",
+        45,
+        order_ids(0, 45),
+    )
+    .await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?page=2",
+        45,
+        order_ids(20, 40),
+    )
+    .await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?page=3",
+        45,
+        order_ids(40, 45),
+    )
+    .await;
+    assert_order_page(&mut customer, "/api/orders/me?size=2", 45, order_ids(0, 2)).await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?sort=desc",
+        45,
+        order_ids(25, 45).into_iter().rev().collect(),
+    )
+    .await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?page=01&size=020&sort=asc",
+        45,
+        order_ids(0, 20),
+    )
+    .await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?page=1000000&size=100",
+        45,
+        vec![],
+    )
+    .await;
+    assert_order_page(
+        &mut customer,
+        "/api/orders/me?customer=other_customer&page=2",
+        45,
+        order_ids(20, 40),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn admin_order_filters_precede_paging_and_descending_reverses_legacy_order() {
+    let (_directory, app) = pagination_app();
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    assert_order_page(&mut admin, "/api/orders", 52, order_ids(0, 52)).await;
+    assert_order_page(&mut admin, "/api/orders?sort=asc", 52, order_ids(0, 20)).await;
+    assert_order_page(
+        &mut admin,
+        "/api/orders?sort=desc",
+        52,
+        order_ids(32, 52).into_iter().rev().collect(),
+    )
+    .await;
+    assert_order_page(
+        &mut admin,
+        "/api/orders?customer=%20CUSTOMER%20&size=100",
+        45,
+        order_ids(0, 45),
+    )
+    .await;
+    assert_order_page(
+        &mut admin,
+        "/api/orders?customer=other_customer",
+        7,
+        order_ids(45, 52),
+    )
+    .await;
+    assert_order_page(
+        &mut admin,
+        "/api/orders?customer=other_customer&page=2&size=3&sort=desc",
+        7,
+        order_ids(46, 49).into_iter().rev().collect(),
+    )
+    .await;
+    assert_order_page(&mut admin, "/api/orders?customer=nobody&page=1", 0, vec![]).await;
+}
+
+#[tokio::test]
+async fn malformed_order_pagination_uses_structured_validation_without_bypassing_auth() {
+    let (_directory, app) = pagination_app();
+    let mut public = Client::new(&app);
+    assert_eq!(
+        public
+            .send(Method::GET, "/api/orders/me?page=0", None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        public
+            .send(Method::GET, "/api/orders?page=1", None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    let mut customer = Client::new(&app);
+    customer.login("customer", "user123").await;
+    let mut admin = Client::new(&app);
+    admin.login("admin", "admin123").await;
+    assert_eq!(
+        customer
+            .send(Method::GET, "/api/orders?page=1", None)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        admin
+            .send(Method::GET, "/api/orders/me?page=1", None)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    for query in [
+        "page=",
+        "size=",
+        "sort=",
+        "page=0",
+        "page=1000001",
+        "size=0",
+        "size=101",
+        "page=-1",
+        "page=%2B1",
+        "page=1.0",
+        "page=1e2",
+        "page=%201",
+        "page=999999999999999999999999999999999999",
+        "size=one",
+        "sort=ASC",
+        "sort=newest",
+        "page=1&page=2",
+        "size=1&size=1",
+        "sort=asc&sort=desc",
+    ] {
+        for (client, path) in [
+            (&mut customer, "/api/orders/me"),
+            (&mut admin, "/api/orders"),
+        ] {
+            let response = client
+                .send(Method::GET, &format!("{path}?{query}"), None)
+                .await;
+            assert_eq!(
+                response.status,
+                StatusCode::BAD_REQUEST,
+                "{query}: {}",
+                response.text
+            );
+            assert_eq!(response.body["status"], 400);
+            assert_eq!(response.body["code"], "VALIDATION_ERROR");
+            assert_eq!(response.body["path"], path);
+            assert!(response.body["timestamp"].is_string());
+            assert!(response.body["fieldErrors"].is_array());
+        }
+    }
+}
+
 fn assert_error(reply: &Reply, status: StatusCode, code: &str, path: &str) {
     assert_eq!(reply.status, status, "{}", reply.text);
     assert_eq!(reply.body["status"], status.as_u16());

@@ -3,6 +3,7 @@ package com.kai987.smartinventory.web.controller;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,7 @@ import com.kai987.smartinventory.domain.OrderManager;
 import com.kai987.smartinventory.service.SmartInventoryService;
 import com.kai987.smartinventory.web.dto.order.CreateOrderRequest;
 import com.kai987.smartinventory.web.dto.order.OrderListResponse;
+import com.kai987.smartinventory.web.dto.order.OrderPagination;
 import com.kai987.smartinventory.web.dto.order.OrderResponse;
 import com.kai987.smartinventory.web.mapper.ApiMapper;
 
@@ -43,15 +45,21 @@ public class OrderController {
     }
 
     @GetMapping("/me")
-    public OrderListResponse mine(Authentication authentication) {
-        var items = service.ordersForCustomer(authentication.getName()).stream()
+    public OrderListResponse mine(Authentication authentication,
+            @RequestParam MultiValueMap<String, String> query) {
+        var pagination = OrderPagination.parse(query);
+        var matched = service.ordersForCustomer(authentication.getName());
+        var items = pagination.select(matched).stream()
                 .map(mapper::toOrder).toList();
-        return new OrderListResponse(items, items.size());
+        return new OrderListResponse(items, matched.size());
     }
 
     @GetMapping
-    public OrderListResponse all(@RequestParam(required = false) String customer) {
-        var items = service.allOrders(customer).stream().map(mapper::toOrder).toList();
-        return new OrderListResponse(items, items.size());
+    public OrderListResponse all(@RequestParam(required = false) String customer,
+            @RequestParam MultiValueMap<String, String> query) {
+        var pagination = OrderPagination.parse(query);
+        var matched = service.allOrders(customer);
+        var items = pagination.select(matched).stream().map(mapper::toOrder).toList();
+        return new OrderListResponse(items, matched.size());
     }
 }

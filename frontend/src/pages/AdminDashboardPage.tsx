@@ -19,12 +19,13 @@ export default function AdminDashboardPage() {
   const productName = useProductNames()
   const { user, runProtectedRequest, isChangingSession } = useAuth()
   const { formatNumber, formatYen } = useLocaleFormatters()
+  const latestPaging = { page: 1, size: 5, sort: 'desc' as const }
   useLocalizedDocumentTitle('admin.dashboardTitle')
   const [summary, products, orders] = useQueries({
     queries: [
       { queryKey: queryKeys.adminSummary(user?.username ?? ''), queryFn: ({ signal }) => runProtectedRequest((scope) => adminApi.summary(AbortSignal.any([signal, scope]))), enabled: user?.role === 'ADMIN' && !isChangingSession },
       { queryKey: queryKeys.products({ q: '', inStockOnly: false }), queryFn: ({ signal }) => productApi.list({ q: '', inStockOnly: false }, signal) },
-      { queryKey: queryKeys.adminOrders(user?.username ?? '', ''), queryFn: ({ signal }) => runProtectedRequest((scope) => orderApi.all('', AbortSignal.any([signal, scope]))), enabled: user?.role === 'ADMIN' && !isChangingSession },
+      { queryKey: queryKeys.adminOrders(user?.username ?? '', '', latestPaging), queryFn: ({ signal }) => runProtectedRequest((scope) => orderApi.all('', AbortSignal.any([signal, scope]), latestPaging)), enabled: user?.role === 'ADMIN' && !isChangingSession },
     ],
   })
 
@@ -35,7 +36,7 @@ export default function AdminDashboardPage() {
   }
 
   const lowStock = products.data.items.filter((product) => product.stock <= summary.data.lowStockThreshold)
-  const latestOrders = orders.data.items.slice(-5).reverse()
+  const latestOrders = orders.data.items
   const metrics = [
     { id: 'products', label: t('admin.productCount'), value: formatNumber(summary.data.productCount), icon: Package },
     { id: 'stock', label: t('admin.totalStock'), value: formatNumber(summary.data.totalStock), icon: Boxes },

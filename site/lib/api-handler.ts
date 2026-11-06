@@ -2,6 +2,8 @@ import { compare, hash } from 'bcryptjs';
 import { ensureDatabase } from './database';
 import { keyedOrderId, sameOrderIntent } from './order-idempotency';
 import { getProductImage, requireStoredProductImage, uploadProductImage } from './product-images';
+import { orderPagination, type OrderPagination } from './order-pagination';
+import { maybeCleanupExpiredSessions } from './session-maintenance';
 import {
   ApiFault,
   destroySession,
@@ -45,6 +47,7 @@ type OrderRow = {
 };
 
 type OrderItemRow = {
+  order_id: string;
   product_id: string;
   product_name: string;
   product_name_ja: string | null;
@@ -92,22 +95,37 @@ async function productsForOrder(items: RequestedItem[]): Promise<ProductRow[]> {
   return result.results;
 }
 
-async function ordersResponse(whereSql = '', bindings: unknown[] = []) {
+async function ordersResponse(whereSql = '', bindings: unknown[] = [], pagination: OrderPagination | null = null) {
   const database = await ensureDatabase();
-  const orders = await database.prepare(
+  const direction = pagination?.sort === 'desc' ? 'DESC' : 'ASC';
+  const [orders, count] = await Promise.all([database.prepare(
     `SELECT order_id, customer_name, total_price_yen, total_weight_kg, estimated_boxes, created_at
-     FROM orders ${whereSql} ORDER BY created_at ASC, order_id ASC`,
-  ).bind(...bindings).all<OrderRow>();
-  const items = await Promise.all(orders.results.map(async (order) => {
+     FROM orders ${whereSql} ORDER BY created_at ${direction}, order_id ${direction}
+     ${pagination ? 'LIMIT ? OFFSET ?' : ''}`,
+  ).bind(...bindings, ...(pagination ? [pagination.size, (pagination.page - 1) * pagination.size] : [])).all<OrderRow>(),
+  pagination ? database.prepare(`SELECT COUNT(*) AS count FROM orders ${whereSql}`)
+    .bind(...bindings).first<{ count: number }>() : Promise.resolve(null)]);
+  const grouped = new Map<string, OrderItemRow[]>();
+  if (orders.results.length > 0) {
+    // One JSON binding avoids both N+1 reads and D1's 100-parameter limit,
+    // including callers that still request the legacy complete history.
     const result = await database.prepare(
-      `SELECT product_id, product_name, product_name_ja, product_name_zh, product_image_url, unit_price_yen, unit_weight_kg,
+      `SELECT order_id, product_id, product_name, product_name_ja, product_name_zh, product_image_url, unit_price_yen, unit_weight_kg,
               quantity, subtotal_yen, total_weight_kg
-       FROM order_items WHERE order_id = ? ORDER BY item_order ASC`,
-    ).bind(order.order_id).all<OrderItemRow>();
+       FROM order_items WHERE order_id IN (SELECT value FROM json_each(?))
+       ORDER BY order_id ASC, item_order ASC`,
+    ).bind(JSON.stringify(orders.results.map((order) => order.order_id))).all<OrderItemRow>();
+    for (const item of result.results) {
+      const group = grouped.get(item.order_id) ?? [];
+      group.push(item);
+      grouped.set(item.order_id, group);
+    }
+  }
+  const items = orders.results.map((order) => {
     return {
       orderId: order.order_id,
       customerName: order.customer_name,
-      items: result.results.map((item) => ({
+      items: (grouped.get(order.order_id) ?? []).map((item) => ({
         productId: item.product_id,
         productName: item.product_name,
         ...(item.product_name_ja ? { productNameJa: item.product_name_ja } : {}),
@@ -123,8 +141,8 @@ async function ordersResponse(whereSql = '', bindings: unknown[] = []) {
       totalWeightKg: order.total_weight_kg,
       estimatedBoxes: order.estimated_boxes,
     };
-  }));
-  return { items, total: items.length };
+  });
+  return { items, total: count?.count ?? items.length };
 }
 
 async function authCsrf(request: Request): Promise<Response> {
@@ -427,15 +445,17 @@ async function createOrder(request: Request): Promise<Response> {
 
 async function myOrders(request: Request): Promise<Response> {
   const { context, user } = await requireUser(request, 'CUSTOMER');
-  return sessionResponse(json(await ordersResponse('WHERE customer_name = ?', [user.username])), context);
+  const pagination = orderPagination(new URL(request.url).searchParams);
+  return sessionResponse(json(await ordersResponse('WHERE customer_name = ?', [user.username], pagination)), context);
 }
 
 async function allOrders(request: Request): Promise<Response> {
   const { context } = await requireUser(request, 'ADMIN');
   const customer = new URL(request.url).searchParams.get('customer')?.trim() ?? '';
+  const pagination = orderPagination(new URL(request.url).searchParams);
   const response = customer === ''
-    ? await ordersResponse()
-    : await ordersResponse('WHERE instr(LOWER(customer_name), ?) > 0', [customer.toLowerCase()]);
+    ? await ordersResponse('', [], pagination)
+    : await ordersResponse('WHERE instr(LOWER(customer_name), ?) > 0', [customer.toLowerCase()], pagination);
   return sessionResponse(json(response), context);
 }
 
@@ -472,7 +492,8 @@ async function dispatch(request: Request): Promise<Response> {
   const method = request.method.toUpperCase();
   const parts = routeParts(request);
   if (parts[0] === 'product-images' && parts.length === 2 && method === 'GET') return getProductImage(parts[1]);
-  await ensureDatabase();
+  const database = await ensureDatabase();
+  await maybeCleanupExpiredSessions(database);
   if (parts[0] === 'product-images' && parts.length === 1 && method === 'POST') return uploadProductImage(request);
   if (method === 'GET' && parts.join('/') === 'auth/csrf') return authCsrf(request);
   if (method === 'GET' && parts.join('/') === 'auth/me') return authMe(request);

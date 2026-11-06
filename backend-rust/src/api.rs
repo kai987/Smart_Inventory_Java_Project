@@ -438,6 +438,51 @@ impl<T> ItemList<T> {
 }
 
 #[derive(Default, Deserialize)]
+struct OrderPagination {
+    page: Option<String>,
+    size: Option<String>,
+    sort: Option<String>,
+}
+
+impl OrderPagination {
+    fn select<T>(self, mut items: Vec<T>) -> Result<ItemList<T>, DomainError> {
+        let paged = self.page.is_some() || self.size.is_some() || self.sort.is_some();
+        let number = |value: Option<&str>, default, maximum| {
+            let Some(value) = value else {
+                return Ok(default);
+            };
+            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(DomainError::new(Code::ValidationError));
+            }
+            value
+                .parse::<usize>()
+                .ok()
+                .filter(|value| (1..=maximum).contains(value))
+                .ok_or_else(|| DomainError::new(Code::ValidationError))
+        };
+        let page = number(self.page.as_deref(), 1, 1_000_000)?;
+        let size = number(self.size.as_deref(), 20, 100)?;
+        let descending = match self.sort.as_deref() {
+            None | Some("asc") => false,
+            Some("desc") => true,
+            _ => return Err(DomainError::new(Code::ValidationError)),
+        };
+        let total = items.len();
+        if paged {
+            if descending {
+                items.reverse();
+            }
+            items = items
+                .into_iter()
+                .skip((page - 1) * size)
+                .take(size)
+                .collect();
+        }
+        Ok(ItemList { items, total })
+    }
+}
+
+#[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProductQuery {
     q: Option<String>,
@@ -824,13 +869,19 @@ async fn my_orders(
     State(state): State<Arc<AppState>>,
     Extension(context): Extension<SessionContext>,
     OriginalUri(uri): OriginalUri,
+    RawQuery(query): RawQuery,
 ) -> Response {
     let user = match context.require_role(Role::Customer) {
         Ok(user) => user,
         Err(error) => return error_response(error, uri.path()),
     };
+    let pagination: OrderPagination =
+        match serde_urlencoded::from_str(query.as_deref().unwrap_or("")) {
+            Ok(query) => query,
+            Err(_) => return error_response(DomainError::new(Code::ValidationError), uri.path()),
+        };
     let result = with_store(&state, move |store| {
-        Ok(ItemList::new(store.orders_for_customer(&user.username)))
+        pagination.select(store.orders_for_customer(&user.username))
     })
     .await;
     result_response(result, uri.path(), StatusCode::OK)
@@ -839,6 +890,9 @@ async fn my_orders(
 #[derive(Default, Deserialize)]
 struct OrderQuery {
     customer: Option<String>,
+    page: Option<String>,
+    size: Option<String>,
+    sort: Option<String>,
 }
 
 async fn all_orders(
@@ -855,7 +909,12 @@ async fn all_orders(
         Err(_) => return error_response(DomainError::new(Code::ValidationError), uri.path()),
     };
     let result = with_store(&state, move |store| {
-        Ok(ItemList::new(store.all_orders(query.customer.as_deref())))
+        OrderPagination {
+            page: query.page,
+            size: query.size,
+            sort: query.sort,
+        }
+        .select(store.all_orders(query.customer.as_deref()))
     })
     .await;
     result_response(result, uri.path(), StatusCode::OK)

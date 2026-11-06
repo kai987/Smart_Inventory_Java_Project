@@ -11,6 +11,7 @@ import { handleApiRequest } from './api-handler';
 let sqlite: DatabaseSync;
 let images: Map<string, { bytes: Uint8Array; contentType: string }>;
 let maximumBoundParameters = 0;
+let readQueries: string[] = [];
 let beforeBatch: (() => void) | null = null;
 class Prepared {
   constructor(readonly sql: string, readonly values: (string | number | null)[] = []) { }
@@ -24,8 +25,8 @@ class Prepared {
     }
     return new Prepared(this.sql, values);
   }
-  async first<T>() { return (sqlite.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
-  async all<T>() { return { results: sqlite.prepare(this.sql).all(...this.values) as T[], success: true }; }
+  async first<T>() { readQueries.push(this.sql); return (sqlite.prepare(this.sql).get(...this.values) as T | undefined) ?? null; }
+  async all<T>() { readQueries.push(this.sql); return { results: sqlite.prepare(this.sql).all(...this.values) as T[], success: true }; }
   async run() {
     const result = sqlite.prepare(this.sql).run(...this.values);
     return { success: true, meta: { changes: Number(result.changes) } };
@@ -34,6 +35,7 @@ class Prepared {
 
 beforeEach(() => {
   maximumBoundParameters = 0;
+  readQueries = [];
   beforeBatch = null;
   sqlite = new DatabaseSync(':memory:');
   sqlite.exec(`
@@ -178,6 +180,112 @@ describe('Site literal substring search', () => {
       expect(await response.json()).toEqual({ items: [], total: 0 });
     }
     expect(sqlite.prepare('SELECT * FROM orders ORDER BY order_id').all()).toEqual(saved);
+  });
+});
+
+describe('Site order paging and bulk detail reads', () => {
+  const get = (query = '', session = 'customer-session', path = 'orders/me') => handleApiRequest(new Request(
+    `http://localhost/api/${path}${query ? `?${query}` : ''}`,
+    { headers: { Cookie: `SMART_INVENTORY_SESSION=${session}` } },
+  ));
+  type ListedOrder = { orderId: string; customerName: string; totalPriceYen: string; items: { productId: string; productNameJa?: string; productNameZh?: string; productImageUrl?: string; unitPriceYen: string }[] };
+  type ListedOrders = { items: ListedOrder[]; total: number };
+  beforeEach(() => {
+    for (let i = 0; i < 130; i++) {
+      const id = `PAGE${String(i).padStart(3, '0')}`;
+      sqlite.prepare('INSERT INTO orders VALUES (?,?,?,?,?,?)').run(id, i < 125 ? 'customer' : 'other', '12000000000000000001', 1, 1, '2026-01-01T00:00:00Z');
+      for (const itemOrder of [1, 0]) sqlite.prepare(`INSERT INTO order_items(
+        order_id,item_order,product_id,product_name,unit_price_yen,unit_weight_kg,quantity,subtotal_yen,total_weight_kg,
+        product_name_ja,product_name_zh,product_image_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        id, itemOrder, `P00${itemOrder + 1}`, 'Saved name', '12000000000000000001', 0.5, 1, '12000000000000000001', 0.5,
+        '保存した名前', '保存名称', '/api/product-images/saved.png',
+      );
+    }
+  });
+  const body = async (response: Response) => { expect(response.status).toBe(200); return await response.json() as ListedOrders; };
+
+  it('keeps legacy full ascending histories with exactly one bulk item read beyond 100 orders', async () => {
+    const listed = await body(await get('unknown=ignored'));
+    expect(listed.total).toBe(125);
+    expect(listed.items).toHaveLength(125);
+    expect(listed.items[0].orderId).toBe('PAGE000');
+    expect(listed.items.at(-1)?.orderId).toBe('PAGE124');
+    expect(readQueries.filter((sql) => /FROM order_items\b/.test(sql))).toHaveLength(1);
+    expect(maximumBoundParameters).toBeLessThanOrEqual(3);
+    for (const order of listed.items) {
+      expect(order.customerName).toBe('customer');
+      expect(order.totalPriceYen).toBe('12000000000000000001');
+      expect(order.items.map((item) => item.productId)).toEqual(['P001', 'P002']);
+      expect(order.items[0]).toMatchObject({ productNameJa: '保存した名前', productNameZh: '保存名称',
+        productImageUrl: '/api/product-images/saved.png', unitPriceYen: '12000000000000000001' });
+    }
+  });
+  it('paginates with stable timestamp ties, defaults and accurate matched totals', async () => {
+    const first = await body(await get('page=1'));
+    const second = await body(await get('page=0002'));
+    expect(first.items.map((order) => order.orderId)).toEqual(Array.from({ length: 20 }, (_, i) => `PAGE${String(i).padStart(3, '0')}`));
+    expect(second.items.map((order) => order.orderId)).toEqual(Array.from({ length: 20 }, (_, i) => `PAGE${String(i + 20).padStart(3, '0')}`));
+    expect(second.total).toBe(125);
+    const last = await body(await get('page=7&size=20'));
+    expect(last.items).toHaveLength(5);
+    expect(last.total).toBe(125);
+    expect(await body(await get('page=1000000&size=100'))).toEqual({ items: [], total: 125 });
+    const latest = await body(await get('sort=desc&size=5'));
+    expect(latest.items.map((order) => order.orderId)).toEqual(['PAGE124', 'PAGE123', 'PAGE122', 'PAGE121', 'PAGE120']);
+  });
+  it('bulk-fetches only the selected page, preserving historical snapshots after current products change', async () => {
+    sqlite.prepare("UPDATE products SET name='New catalog name',name_ja=NULL,name_zh=NULL,image_url=NULL").run();
+    const listed = await body(await get('page=2&size=100'));
+    expect(listed.items).toHaveLength(25);
+    const itemReads = readQueries.filter((sql) => /FROM order_items\b/.test(sql));
+    expect(itemReads).toHaveLength(1);
+    expect(itemReads[0]).toContain('json_each(?)');
+    expect(listed.items[0].items[0].productNameJa).toBe('保存した名前');
+  });
+  it('keeps admin filtering, customer isolation and roles with paging', async () => {
+    const all = await body(await get('page=2&size=100', 'admin-session', 'orders'));
+    expect(all.total).toBe(130);
+    expect(all.items).toHaveLength(30);
+    const filtered = await body(await get('customer=%20OtHeR%20&page=2&size=3', 'admin-session', 'orders'));
+    expect(filtered.total).toBe(5);
+    expect(filtered.items.map((order) => order.orderId)).toEqual(['PAGE128', 'PAGE129']);
+    expect(await body(await get('customer=missing&page=1', 'admin-session', 'orders'))).toEqual({ items: [], total: 0 });
+    expect((await get('page=1', 'customer-session', 'orders')).status).toBe(403);
+    expect((await get('page=1', 'admin-session')).status).toBe(403);
+    expect((await get('page=1', 'anonymous-session')).status).toBe(401);
+  });
+  it.each(['page=0', 'size=101', 'sort=DESC', 'page=1&page=2', 'size=', 'sort=asc&sort=desc'])('returns structured validation for %s', async (query) => {
+    const response = await get(query);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'VALIDATION_ERROR', fieldErrors: expect.any(Array) });
+  });
+});
+
+describe('Site request maintenance wiring', () => {
+  it('cleans at most 100 expired sessions on API access without changing active sessions or durable data', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 105; i++) sqlite.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(`expired-${i}`, null, 'old-token', now - 1);
+    const active = sqlite.prepare('SELECT * FROM sessions WHERE expires_at > ? ORDER BY session_id').all(now);
+    const products = sqlite.prepare('SELECT * FROM products ORDER BY id').all();
+    const first = await handleApiRequest(new Request('http://localhost/api/products'));
+    expect(first.status).toBe(200);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM sessions WHERE expires_at <= ?').get(now)!.count).toBe(5);
+    await handleApiRequest(new Request('http://localhost/api/products'));
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM sessions WHERE expires_at <= ?').get(now)!.count).toBe(5);
+    expect(sqlite.prepare('SELECT * FROM sessions WHERE expires_at > ? ORDER BY session_id').all(now)).toEqual(active);
+    expect(sqlite.prepare('SELECT * FROM products ORDER BY id').all()).toEqual(products);
+  });
+  it('continues serving the API when maintenance fails and omits database errors from its warning', async () => {
+    const original = context.database!.prepare;
+    vi.spyOn(context.database!, 'prepare').mockImplementation((sql: string) => {
+      if (/DELETE FROM sessions/.test(sql)) throw new Error('sensitive session details');
+      return original(sql);
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await handleApiRequest(new Request('http://localhost/api/products'))).status).toBe(200);
+      expect(warning).toHaveBeenCalledExactlyOnceWith('Expired session maintenance failed; it will retry later.');
+    } finally { vi.restoreAllMocks(); }
   });
 });
 

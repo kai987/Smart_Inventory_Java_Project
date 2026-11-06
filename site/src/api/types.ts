@@ -59,6 +59,12 @@ export type OrderList = {
   total: number
 }
 
+export type OrderPagination = {
+  page: number
+  size: number
+  sort: 'asc' | 'desc'
+}
+
 export type DashboardSummary = {
   productCount: number
   totalStock: number

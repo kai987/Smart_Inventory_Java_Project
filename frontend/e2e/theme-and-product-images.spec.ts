@@ -3,6 +3,15 @@ import { expect, test, type Page } from '@playwright/test'
 const THEME_STORAGE_KEY = 'smart-inventory-theme:v1'
 const PRODUCT_IMAGE_PATTERN = /^\/product-images\/(laptop|mouse|keyboard|monitor)\.webp$/
 
+async function expectThemeColor(page: Page, expected: string) {
+  // SSR can emit media-specific tags; every emitted tag must follow the theme.
+  await expect.poll(async () => {
+    const tags = await page.locator('meta[name="theme-color"]').all()
+    const colors = await Promise.all(tags.map((tag) => tag.getAttribute('content')))
+    return colors.length > 0 && colors.every((color) => color === expected)
+  }, { message: 'At least one theme-color meta must exist, and all must match the selected theme.' }).toBe(true)
+}
+
 async function expectLoadedImages(page: Page, selector: string, expectedCount: number) {
   const images = page.locator(selector)
   await expect(images).toHaveCount(expectedCount)
@@ -27,7 +36,7 @@ test('theme persists and local product images work across public, cart, and admi
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByRole('button', { name: 'Switch to dark mode' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#08111f')
+  await expectThemeColor(page, '#08111f')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
@@ -53,7 +62,7 @@ test('theme persists and local product images work across public, cart, and admi
 
   await page.getByRole('button', { name: 'Switch to light mode' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f6f8fb')
+  await expectThemeColor(page, '#f6f8fb')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
 })

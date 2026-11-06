@@ -10,6 +10,10 @@ Shared catalog metadata localizes the 24 standard product names in English, Japa
 
 The Site product-search API and administrator customer filter use parameter-bound literal substring matching instead of SQL `LIKE`. Complete long/multibyte keywords are preserved, and `%`, `_`, and backslashes remain literal characters rather than wildcards. This avoids D1's 50-byte `LIKE`-pattern limit while retaining the existing ASCII case-insensitive behavior. The public catalog continues to filter its fetched product list in the browser.
 
+Order-list APIs share optional paging with Java/Rust: `page` is 1–1,000,000 (default 1), `size` is 1–100 (default 20), and `sort` is exactly `asc` or `desc` (default `asc`). Any supplied paging parameter enables a page; omitting all three retains the complete ascending legacy response. `{ items, total }` is unchanged, with the overall filtered total and an empty page beyond the end. Empty/duplicate/invalid/out-of-range paging values return HTTP 400 (`VALIDATION_ERROR`); ASCII digits may have leading zeros, while unknown parameter names remain ignored. Authorization and existing customer-filter semantics are preserved. Customer/admin order screens use ascending pages of 20; the dashboard requests five descending entries. Site ordering remains `created_at, order_id`, reversed together for descending order.
+
+Order details are fetched once for the selected order IDs through one JSON-bound query, not once per order. This preserves historical item snapshots and their `item_order` while avoiding N+1 reads and D1's 100-parameter limit, including the backward-compatible full-history path. Paged requests also count the overall filtered history; no schema or stored order data is changed.
+
 Administrators can assign one of the seven catalog categories and upload a product image (PNG/JPEG/WebP, at most 2 MiB). Product metadata is stored in D1, and immutable uploaded files use the `BUCKET` R2 binding. Uploads require the administrator session and CSRF token; file size, media type, signatures, and generated image paths are checked server-side. Images are publicly readable with a fixed raster content type and `nosniff`. Selection previews are browser-local until saving. Orders snapshot the uploaded image reference; replacing/removing a product image does not delete files used by historical orders. Unreferenced uploads are not automatically deleted, including interrupted uploads that completed storage before a later product-save failure.
 
 ## Online demo
@@ -29,7 +33,7 @@ ESLint 10 uses an explicit configuration of supported plugins, without forcing u
 
 The existing [framework source-map adapter](tooling/framework-source-maps.mjs) remains unchanged: truthful MagicString maps cover three pinned hooks without changing executable output bytes, filtering warnings, or rewriting import graphs. Version/source-hash changes still stop at this guard until revalidated.
 
-The separate [snapshot-audited import adapter](tooling/framework-imports.mjs) normalizes only the root-layout and `default-global-error` duplicate edges, retaining the compiler's existing Promise/getter shapes. Revalidated after the long-search/cross-tab-cart changes: paired builds of the same 107-input application snapshot matched all 91 JS/CSS bodies (59 byte-identical), normalizing only recorded generated IDs and emitted filenames. This comparison isolates the adapter, not application changes versus the previous release. The audited build removes two of three notices; this is not a download or performance optimization. Unknown source/config/dependency/environment inputs and watch builds retain the original imports and visible warnings rather than failing in this adapter. Slot is deliberately excluded: its candidate retained 17 exports instead of 4 and added about 1.8 KB of SSR JavaScript, so that `INEFFECTIVE_DYNAMIC_IMPORT` notice remains.
+The separate [snapshot-audited import adapter](tooling/framework-imports.mjs) normalizes only the root-layout and `default-global-error` duplicate edges, retaining the compiler's existing Promise/getter shapes. Revalidated after the paginated-orders/session-maintenance changes: paired builds of the same 112-input application snapshot matched all 91 JS/CSS bodies (59 byte-identical), normalizing only recorded generated IDs and emitted filenames. This comparison isolates the adapter, not application changes versus the previous release. The audited build removes two of three notices; this is not a download or performance optimization. Unknown source/config/dependency/environment inputs and watch builds retain the original imports and visible warnings rather than failing in this adapter. Slot is deliberately excluded: its candidate retained 17 exports instead of 4 and added about 1.8 KB of SSR JavaScript, so that `INEFFECTIVE_DYNAMIC_IMPORT` notice remains.
 
 Recheck audit, tooling, lint, types, tests, and builds when dependencies change. Zero audit findings do not mean zero maintenance warnings or establish overall security. Do not force a framework/linter downgrade just to satisfy audit output.
 
@@ -48,9 +52,23 @@ npm run dev
 
 Open `http://localhost:3000/products`. The demo credentials remain `admin / admin123` and `customer / user123`.
 
+### Built Worker integration and browser tests
+
+After the Site build above, run:
+
+```bash
+npm run test:integration
+cd ../frontend
+npm exec -- playwright install chromium
+npm exec -- playwright test --config playwright.site.config.ts
+```
+
+Install the frontend dependencies first if needed. The API integration command runs the built Worker under real Wrangler/workerd against a new temporary local D1/R2 fixture, applying the committed migration history and normal expanded-catalog bootstrap. The shared Chromium suite starts a separate fresh runtime on loopback port 4175 and uses a four-product fixture matching Java/Rust browser tests. Neither command uses Cloudflare account credentials, deployed data, developer CSV files, or existing local persistence. Tests cover HTTP authentication/CSRF/roles, R2 bytes, order snapshots, rollback/replay, long searches, paging, and session maintenance. The dedicated Site CI job runs both commands; local-runtime validation is distinct from deployment and live-site acceptance.
+
 ## Security and persistence
 
 - Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` on HTTPS.
+- Ordinary API access (not public image reads) runs bounded expired-session maintenance: at most 100 oldest expired rows, no more than once per five minutes per isolate/database binding, with concurrent accesses sharing one sweep. No traffic means no idle cron. Failures leave the API available and allow a subsequent access to retry after 60 seconds; the warning excludes session IDs, tokens, bindings, and driver details. The DELETE rechecks expiry, preserves valid/refreshed sessions, and never deletes users, products, orders, or R2 files.
 - CSRF tokens are required for login, registration, logout, and every write endpoint.
 - Passwords are verified with bcrypt; new registrations are stored as bcrypt hashes.
 - Registration validates the BCrypt limit of 72 UTF-8 bytes and creates an account without automatically signing in, matching the local backends.

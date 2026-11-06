@@ -75,19 +75,6 @@ jobs:
           jar tf backend/target/smart-inventory-demo.jar > "$RUNNER_TEMP/jar-contents.txt"
           grep -Fx 'BOOT-INF/classes/static/index.html' "$RUNNER_TEMP/jar-contents.txt"
 
-      - name: Install Sites dependencies
-        working-directory: site
-        run: npx --yes npm@11.6.2 ci
-
-      - name: Test Sites domain rules
-        run: npm --prefix site run test
-
-      - name: Lint Sites deployment
-        run: npm --prefix site run lint
-
-      - name: Build Sites deployment
-        run: npm --prefix site run build
-
   rust-compatibility:
     name: Rust backend and shared browser tests
     runs-on: ubuntu-26.04
@@ -141,3 +128,51 @@ jobs:
         env:
           SMART_INVENTORY_BACKEND: rust
         run: npm --prefix frontend run test:e2e
+
+  site-runtime:
+    name: Site Worker, D1, R2 and shared browser tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Configure initial Git branch on the ephemeral runner
+        run: git config --global init.defaultBranch main
+
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            site/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install Site dependencies
+        working-directory: site
+        run: npx --yes npm@11.6.2 ci
+
+      - name: Test Site tooling and domain rules
+        run: npm --prefix site test
+
+      - name: Lint and type-check Site
+        run: npm --prefix site run lint
+
+      - name: Build actual Site Worker and client
+        run: npm --prefix site run build
+
+      - name: Test built Worker against fresh local D1 and R2
+        run: npm --prefix site run test:integration
+
+      - name: Install shared browser dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Test shared frontend against built Site Worker
+        working-directory: frontend
+        run: npm exec -- playwright test --config playwright.site.config.ts
