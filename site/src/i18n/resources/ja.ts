@@ -307,6 +307,8 @@ export const ja = {
     network: 'サーバーに接続できません。もう一度お試しください。',
     generic: '問題が発生しました。もう一度お試しください。',
     NETWORK_ERROR: 'サーバーに接続できません。もう一度お試しください。',
+    REQUEST_TIMEOUT: 'サーバーの応答がタイムアウトしました。もう一度お試しください。',
+    REQUEST_CANCELED: 'リクエストがキャンセルされました。',
     INVALID_CREDENTIALS: 'ユーザー名またはパスワードが正しくありません。',
     UNAUTHENTICATED: '続行するにはログインしてください。',
     FORBIDDEN: 'この操作を行う権限がありません。',

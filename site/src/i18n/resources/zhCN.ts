@@ -307,6 +307,8 @@ export const zhCN = {
     network: '无法连接服务器，请重试。',
     generic: '出现问题，请重试。',
     NETWORK_ERROR: '无法连接服务器，请重试。',
+    REQUEST_TIMEOUT: '服务器响应超时，请重试。',
+    REQUEST_CANCELED: '请求已取消。',
     INVALID_CREDENTIALS: '用户名或密码无效。',
     UNAUTHENTICATED: '请登录后继续。',
     FORBIDDEN: '您没有执行此操作的权限。',

@@ -1,8 +1,8 @@
-import { screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../test/render'
-import { useCart } from './CartProvider'
+import { CartProvider, useCart } from './CartProvider'
 import { CART_STORAGE_KEY } from './cartTypes'
 
 function Probe() {
@@ -11,6 +11,8 @@ function Probe() {
     <output>{state.items[0]?.quantity ?? 0}</output>
     <button onClick={() => consumeOrder('customer:order-1', [{ productId: 'P001', quantity: 1 }])}>Apply success</button>
     <button onClick={() => dispatch({ type: 'add', productId: 'P001' })}>Add new item</button>
+    <button onClick={() => dispatch({ type: 'setQuantity', productId: 'P001', quantity: 3 })}>Update quantity</button>
+    <button onClick={() => dispatch({ type: 'remove', productId: 'P001' })}>Remove item</button>
   </>
 }
 
@@ -24,5 +26,50 @@ describe('CartProvider', () => {
     await user.click(screen.getByRole('button', { name: 'Add new item' }))
     await user.click(screen.getByRole('button', { name: 'Apply success' }))
     expect(screen.getByRole('status')).toHaveTextContent('2')
+  })
+
+  it('keeps add, quantity updates, and removal usable when both localStorage methods throw', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage access denied', 'SecurityError')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError')
+    })
+    const view = render(<CartProvider><Probe /></CartProvider>)
+    try {
+      const user = userEvent.setup()
+      expect(screen.getByRole('status')).toHaveTextContent('0')
+      await user.click(screen.getByRole('button', { name: 'Add new item' }))
+      expect(screen.getByRole('status')).toHaveTextContent('1')
+      await user.click(screen.getByRole('button', { name: 'Update quantity' }))
+      expect(screen.getByRole('status')).toHaveTextContent('3')
+      await user.click(screen.getByRole('button', { name: 'Remove item' }))
+      expect(screen.getByRole('status')).toHaveTextContent('0')
+      expect(getItem).toHaveBeenCalled()
+      expect(setItem).toHaveBeenCalledTimes(4)
+    } finally {
+      view.unmount()
+      getItem.mockRestore()
+      setItem.mockRestore()
+    }
+  })
+
+  it('keeps the cart usable when accessing the localStorage getter throws', async () => {
+    const getter = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Storage access denied', 'SecurityError')
+    })
+    const view = render(<CartProvider><Probe /></CartProvider>)
+    try {
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Add new item' }))
+      expect(screen.getByRole('status')).toHaveTextContent('1')
+      await user.click(screen.getByRole('button', { name: 'Update quantity' }))
+      expect(screen.getByRole('status')).toHaveTextContent('3')
+      await user.click(screen.getByRole('button', { name: 'Remove item' }))
+      expect(screen.getByRole('status')).toHaveTextContent('0')
+    } finally {
+      view.unmount()
+      getter.mockRestore()
+    }
   })
 })

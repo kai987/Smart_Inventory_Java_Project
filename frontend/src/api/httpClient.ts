@@ -2,6 +2,8 @@ import axios, { type AxiosError, type GenericAbortSignal, type InternalAxiosRequ
 import { csrfStore } from './csrfStore'
 import type { CsrfToken } from './types'
 
+export const HTTP_REQUEST_TIMEOUT_MS = 15_000
+
 const unsafeMethods = new Set(['post', 'put', 'patch', 'delete'])
 
 type RetryableConfig = InternalAxiosRequestConfig & {
@@ -14,11 +16,13 @@ function throwIfCanceled(signal?: GenericAbortSignal): void {
 
 const csrfClient = axios.create({
   baseURL: '/api',
+  timeout: HTTP_REQUEST_TIMEOUT_MS,
   withCredentials: true,
 })
 
 export const httpClient = axios.create({
   baseURL: '/api',
+  timeout: HTTP_REQUEST_TIMEOUT_MS,
   withCredentials: true,
   headers: {
     Accept: 'application/json',

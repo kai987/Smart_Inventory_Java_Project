@@ -4,6 +4,8 @@ import type { FieldError } from '../api/types'
 
 const errorTranslationKeys = {
   NETWORK_ERROR: 'errors.NETWORK_ERROR',
+  REQUEST_TIMEOUT: 'errors.REQUEST_TIMEOUT',
+  REQUEST_CANCELED: 'errors.REQUEST_CANCELED',
   INVALID_CREDENTIALS: 'errors.INVALID_CREDENTIALS',
   UNAUTHENTICATED: 'errors.UNAUTHENTICATED',
   FORBIDDEN: 'errors.FORBIDDEN',

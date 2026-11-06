@@ -53,8 +53,18 @@ export class ApiError extends Error {
 export function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error
   if (axios.isAxiosError(error)) {
-    return new ApiError(parseBody(error.response?.data, error.response?.status))
+    // A received HTTP response is authoritative, even if a later session change
+    // aborts the signal or an adapter also supplies a transport error code.
+    if (error.response != null) return new ApiError(parseBody(error.response.data, error.response.status))
+    if (axios.isCancel(error) || error.code === axios.AxiosError.ERR_CANCELED) {
+      return new ApiError({ ...fallbackBody, code: 'REQUEST_CANCELED', message: 'The request was canceled.' })
+    }
+    if (error.code === axios.AxiosError.ECONNABORTED || error.code === axios.AxiosError.ETIMEDOUT) {
+      return new ApiError({ ...fallbackBody, code: 'REQUEST_TIMEOUT', message: 'The request timed out. Please try again.' })
+    }
+    return new ApiError(parseBody(undefined))
   }
+  if (axios.isCancel(error)) return new ApiError({ ...fallbackBody, code: 'REQUEST_CANCELED', message: 'The request was canceled.' })
   return new ApiError({ ...fallbackBody, message: error instanceof Error ? error.message : fallbackBody.message })
 }
 

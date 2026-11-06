@@ -305,6 +305,8 @@ export const en = {
     network: 'Unable to reach the server. Please try again.',
     generic: 'Something went wrong. Please try again.',
     NETWORK_ERROR: 'Unable to reach the server. Please try again.',
+    REQUEST_TIMEOUT: 'The server took too long to respond. Please try again.',
+    REQUEST_CANCELED: 'The request was canceled.',
     INVALID_CREDENTIALS: 'Invalid username or password.',
     UNAUTHENTICATED: 'Please sign in to continue.',
     FORBIDDEN: 'You do not have permission to perform this action.',

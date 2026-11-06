@@ -181,9 +181,15 @@ Customer and administrator query keys include the verified account identity. Log
 
 Java, Rust, and Site return the same authentication codes: `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `FORBIDDEN`, and `USERNAME_EXISTS`. An expired-session response from a protected API sends the user back to login and clears private caches while preserving the device-local cart.
 
-The cart freezes its edit controls while an order is pending. Checkout sends an `Idempotency-Key` and retains the same key for an unchanged retry, including after a page reload. All three backends accept optional keys consisting of 16–128 ASCII letters, digits, `_`, or `-`. An accepted key is scoped to the customer and encoded into the existing persisted order ID, so replaying the same normalized item quantities returns the original order without decrementing stock again—even after a restart or product deletion. Reusing a key for different quantities returns HTTP 409 (`IDEMPOTENCY_CONFLICT`). Requests without a key retain the original create-new-order behavior.
+The cart freezes its edit controls while an order is pending. Checkout sends an `Idempotency-Key` and retains the same key for an unchanged retry, including after a page reload when browser storage is available. All three backends accept optional keys consisting of 16–128 ASCII letters, digits, `_`, or `-`. An accepted key is scoped to the customer and encoded into the existing persisted order ID, so replaying the same normalized item quantities returns the original order without decrementing stock again—even after a restart or product deletion. Reusing a key for different quantities returns HTTP 409 (`IDEMPOTENCY_CONFLICT`). Requests without a key retain the original create-new-order behavior.
 
 Successful checkout subtracts only the quantities in its submitted snapshot, preserving cart additions made elsewhere while the request was in flight. A lost response can be retried with the original key even if the accepted order has exhausted current stock. Local CSV backends still require one writer per data directory; idempotency does not turn CSV storage into a multi-instance database.
+
+### Browser storage and connection failures
+
+Cart persistence handles denied storage access, quota exhaustion, and failed cleanup of malformed data without stopping the app or cart controls. Cart, language, and theme changes still work in memory on the current page. Checkout keys also have customer/cart-scoped in-memory protection: failed writes cannot generate a new key for an unchanged retry, and failed cleanup cannot resurrect a completed key. When storage is unavailable, recovery after reloading or closing the tab is not guaranteed. Check order history before placing a new order if an earlier result is uncertain after a reload.
+
+Both regular API calls and CSRF retrieval have a 15-second timeout per HTTP request. Timeout, cancellation, and network failure are distinguished and localized in English, Japanese, and Chinese. A timeout does not prove that server-side work was canceled. Writes are not automatically retried just because they timed out; checkout retains the cart and key for a manual retry. The existing single retry for a confirmed CSRF rejection and read-query retries remain unchanged.
 
 ## Production build
 

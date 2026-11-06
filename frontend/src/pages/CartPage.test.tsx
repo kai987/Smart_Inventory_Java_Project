@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 import { orderApi } from '../api/orderApi'
 import { productApi } from '../api/productApi'
@@ -145,6 +146,43 @@ describe('CartPage', () => {
     expect(storedQuantity()).toBe(1)
     expect(getPendingCheckoutKey('customer', [{ productId: 'P001', quantity: 1 }])).toBe(key)
     expect(screen.queryByText('Order placed successfully.')).not.toBeInTheDocument()
+  })
+
+  it.each<{ language: AppLanguage; buttonName: string; timeoutMessage: string; emptyTitle: string }>([
+    { language: 'en', buttonName: 'Place order', timeoutMessage: 'The server took too long to respond. Please try again.', emptyTitle: 'Your cart is empty' },
+    { language: 'ja', buttonName: '注文を確定', timeoutMessage: 'サーバーの応答がタイムアウトしました。もう一度お試しください。', emptyTitle: 'カートは空です' },
+    { language: 'zh-CN', buttonName: '提交订单', timeoutMessage: '服务器响应超时，请重试。', emptyTitle: '购物车为空' },
+  ])('releases checkout after a timeout and safely retries in $language when session storage is full', async ({ language, buttonName, timeoutMessage, emptyTitle }) => {
+    seedCart(1)
+    const sessionStorage = window.sessionStorage
+    const originalSetItem = Storage.prototype.setItem.bind(window.localStorage)
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (this === sessionStorage) throw new DOMException('Storage is full', 'QuotaExceededError')
+      originalSetItem(key, value)
+    })
+    vi.spyOn(productApi, 'list')
+      .mockResolvedValueOnce({ items: [laptop], total: 1 })
+      .mockResolvedValue({ items: [{ ...laptop, stock: 0, available: false }], total: 1 })
+    const create = vi.spyOn(orderApi, 'create')
+      .mockRejectedValueOnce(new AxiosError('timeout of 15000ms exceeded', 'ECONNABORTED'))
+      .mockResolvedValue(savedOrder)
+    renderWithProviders(<CartPage />, { language, user: { username: 'customer', role: 'CUSTOMER' }, route: '/cart' })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: buttonName }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(timeoutMessage)
+    expect(create).toHaveBeenCalledTimes(1)
+    const originalKey = create.mock.calls[0]?.[1]
+    expect(getPendingCheckoutKey('customer', [{ productId: 'P001', quantity: 1 }])).toBe(originalKey)
+    expect(storedQuantity()).toBe(1)
+
+    // A timed-out request may already have committed and exhausted the stock.
+    await waitFor(() => expect(screen.getByRole('spinbutton')).toHaveAttribute('max', '0'))
+    expect(screen.getByRole('button', { name: buttonName })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: buttonName }))
+    expect(await screen.findByText(emptyTitle)).toBeInTheDocument()
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(create.mock.calls[1]?.[1]).toBe(originalKey)
+    expect(create.mock.calls[1]?.[0]).toEqual({ items: [{ productId: 'P001', quantity: 1 }] })
   })
 
   it.each<{ language: AppLanguage; inputName: string; error: string }>([

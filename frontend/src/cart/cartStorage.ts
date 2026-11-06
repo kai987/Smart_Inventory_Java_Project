@@ -13,8 +13,23 @@ function isCartItem(value: unknown): value is CartItem {
   )
 }
 
-export function readCart(storage: Pick<Storage, 'getItem' | 'removeItem'> = window.localStorage): CartState {
-  const raw = storage.getItem(CART_STORAGE_KEY)
+function browserStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+export function readCart(storage?: Pick<Storage, 'getItem' | 'removeItem'>): CartState {
+  const availableStorage = storage ?? browserStorage()
+  if (availableStorage === null) return emptyCart
+  let raw: string | null
+  try {
+    raw = availableStorage.getItem(CART_STORAGE_KEY)
+  } catch {
+    return emptyCart
+  }
   if (raw === null) return emptyCart
 
   try {
@@ -30,12 +45,22 @@ export function readCart(storage: Pick<Storage, 'getItem' | 'removeItem'> = wind
     }
     return { items: record.items }
   } catch {
-    storage.removeItem(CART_STORAGE_KEY)
+    try {
+      availableStorage.removeItem(CART_STORAGE_KEY)
+    } catch {
+      // A browser storage restriction must not prevent an in-memory cart.
+    }
     return emptyCart
   }
 }
 
-export function writeCart(state: CartState, storage: Pick<Storage, 'setItem'> = window.localStorage): void {
-  const stored: StoredCart = { version: CART_SCHEMA_VERSION, items: state.items }
-  storage.setItem(CART_STORAGE_KEY, JSON.stringify(stored))
+export function writeCart(state: CartState, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    const availableStorage = storage ?? browserStorage()
+    if (availableStorage === null) return
+    const stored: StoredCart = { version: CART_SCHEMA_VERSION, items: state.items }
+    availableStorage.setItem(CART_STORAGE_KEY, JSON.stringify(stored))
+  } catch {
+    // React remains the source of truth when persistence is unavailable or full.
+  }
 }
